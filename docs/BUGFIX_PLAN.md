@@ -18,9 +18,19 @@ It cannot reach the configured Gradle distribution at `services.gradle.org` in t
 
 ## Iteration status
 
-The implementation and its deterministic regression coverage are captured in commit `c6b53e1` (`feat(storage): implement Telegram-backed file workflows`). It includes the asynchronous upload tracker/gateway, Saved Messages media mapper and resumable history sync, Room index/migrations, managed storage and transfer recovery, secure viewer routing, metadata sync rules, and Android/fake-gateway tests. A follow-up review is continuing on the same branch.
+The implementation and its deterministic regression coverage are captured in these commits:
 
-Before the temporary compiler was removed from the sandbox, selected pure-Kotlin model/domain tests, synchronization tests, upload-tracker tests, mapper tests with a JSON stub, and a TDLib gateway source smoke compilation passed. The Gradle wrapper still cannot download Gradle because the configured distribution endpoint fails TLS here; Android SDK/NDK, generated native TDLib libraries, and live Telegram credentials remain unavailable. No live Android, TDLib, or APK result is claimed.
+- `b5e38f5` (`docs: document storage recovery and validation limits`) records the implementation plan, privacy boundary, TDLib integration, and unavailable-prerequisite status.
+- `c6b53e1` (`feat(storage): implement Telegram-backed file workflows`) adds the Android/core foundation, asynchronous upload tracker/gateway, media mapper, Room index/migrations, managed storage, transfer recovery, secure viewer routing, metadata rules, and tests.
+- `11be71b` (`fix(model): classify PDFs as documents`) keeps PDF filtering distinct from text-file filtering.
+- `df0d447` (`fix(transfer): settle cancellation against latest state`) prevents a stale transfer-row snapshot from canceling a transfer that already completed.
+- `b2b7cc8` (`fix(sync): reconcile permanent remote deletions`) handles TDLib deletion updates without removing local managed bytes.
+- `127a82a` (`fix(sync): reconcile stale remote index entries`) reconciles absence only after a completed full history scan.
+- `ac4b127` (`test(transfer): cover cancellation failure policy`) adds JVM coverage for cancellation and retry policy.
+
+The targeted review and deterministic checks continue on the same branch.
+
+With a temporary JDK from `jdk4py` and the Kotlin compiler package available through the allowed npm registry, selected pure-Kotlin model/domain tests, synchronization tests, upload-tracker tests, mapper tests with a JSON stub, fake-gateway tests, transfer-failure tests, and TDLib/app source smoke compilations pass. The Gradle wrapper still cannot download Gradle because the configured distribution endpoint fails TLS here; Android SDK/NDK, generated native TDLib libraries, and live Telegram credentials remain unavailable. No live Android, TDLib, or APK result is claimed.
 
 ## Diagnosis from source inspection
 
