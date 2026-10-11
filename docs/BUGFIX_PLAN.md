@@ -31,6 +31,7 @@ The implementation and its deterministic regression coverage are captured in the
 - `a8b0146` (`fix(build): repair TDLib helper shell syntax`) makes the native-build helper parse correctly and fail truthfully at the missing-SDK prerequisite.
 - `bb9c7d4` (`test(database): cover full remote reconciliation`) covers absence reconciliation while preserving local managed bytes.
 - `05c1de6` (`fix(download): clear cancellation markers after early stop`) cleans explicit-cancel bookkeeping even when a download stops before creating its transfer row.
+- `19a43c2` (`fix(transfer): retry transient numeric server errors`) treats TDLib-style 429 and 5xx error codes as retryable even when their messages are generic, with focused model coverage.
 
 The targeted review and deterministic checks continue on the same branch.
 
