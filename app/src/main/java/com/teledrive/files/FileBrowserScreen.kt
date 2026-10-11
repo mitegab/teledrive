@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
@@ -111,6 +112,11 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
     var showSortMenu by rememberSaveable { mutableStateOf(false) }
     var showCreateFolder by rememberSaveable { mutableStateOf(false) }
     var newFolderName by rememberSaveable { mutableStateOf("") }
+    var folderForActions by remember { mutableStateOf<Folder?>(null) }
+    var folderBeingRenamed by remember { mutableStateOf<Folder?>(null) }
+    var showRenameFolder by rememberSaveable { mutableStateOf(false) }
+    var renameFolderName by rememberSaveable { mutableStateOf("") }
+    var confirmFolderDelete by remember { mutableStateOf<Folder?>(null) }
     var confirmRemoteDelete by remember { mutableStateOf<StoredFile?>(null) }
     var exportFile by remember { mutableStateOf<StoredFile?>(null) }
     val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { destination ->
@@ -162,7 +168,12 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
             Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(selected = state.query.folderId == null, onClick = { viewModel.setFolder(null) }, label = { Text("All folders") })
                 state.folders.forEach { folder ->
-                    FilterChip(selected = state.query.folderId == folder.id, onClick = { viewModel.setFolder(folder.id) }, label = { Text(folder.name) })
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(selected = state.query.folderId == folder.id, onClick = { viewModel.setFolder(folder.id) }, label = { Text(folder.name) })
+                        IconButton(onClick = { folderForActions = folder }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Rounded.MoreVert, contentDescription = "Manage ${folder.name}")
+                        }
+                    }
                 }
                 AssistChip(onClick = { showCreateFolder = true }, label = { Text("New folder") }, leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, contentDescription = null) })
             }
@@ -244,6 +255,54 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
         )
     }
 
+    folderForActions?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { folderForActions = null },
+            title = { Text(folder.name) },
+            text = { Text("Manage this virtual folder. File assignments stay local unless metadata sync is enabled.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    renameFolderName = folder.name
+                    folderBeingRenamed = folder
+                    showRenameFolder = true
+                    folderForActions = null
+                }) { Text("Rename") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { confirmFolderDelete = folder; folderForActions = null }) { Text("Delete") }
+                    TextButton(onClick = { folderForActions = null }) { Text("Close") }
+                }
+            },
+        )
+    }
+    if (showRenameFolder) {
+        AlertDialog(
+            onDismissRequest = { showRenameFolder = false },
+            title = { Text("Rename folder") },
+            text = { OutlinedTextField(value = renameFolderName, onValueChange = { renameFolderName = it }, singleLine = true, label = { Text("Folder name") }) },
+            confirmButton = {
+                Button(onClick = {
+                    folderBeingRenamed?.let { viewModel.renameFolder(it, renameFolderName) }
+                    folderBeingRenamed = null
+                    showRenameFolder = false
+                }, enabled = renameFolderName.trim().isNotEmpty()) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { showRenameFolder = false }) { Text("Cancel") } },
+        )
+    }
+
+    confirmFolderDelete?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { confirmFolderDelete = null },
+            title = { Text("Delete ${folder.name}?") },
+            text = { Text("Files will remain in Saved Messages and will be unassigned from this virtual folder. This does not delete remote files.") },
+            confirmButton = {
+                Button(onClick = { if (state.query.folderId == folder.id) viewModel.setFolder(null); viewModel.deleteFolder(folder); confirmFolderDelete = null }) { Text("Delete folder") }
+            },
+            dismissButton = { TextButton(onClick = { confirmFolderDelete = null }) { Text("Cancel") } },
+        )
+    }
     selectedFile?.let { file ->
         FileDetailsDialog(
             file = file,
