@@ -22,7 +22,7 @@ At plan creation the execution environment had no JDK, Gradle installation, Andr
 - **Dependency injection:** Hilt in the Android app. ViewModels depend on use cases/repositories, never on TDLib or `Context` directly.
 - **Concurrency:** coroutines and `Flow`; TDLib receives are consumed by one dedicated IO receiver loop and dispatched to request waiters/update flows. No TDLib call blocks the main thread.
 - **Persistence:** TDLib owns its encrypted/optionally encrypted Telegram database and file cache; Room owns TeleDrive's local index; DataStore owns non-sensitive preferences; Android Keystore protects the TDLib database encryption key.
-- **Files:** Storage Access Framework URIs are staged into app-private temporary files for TDLib uploads. Downloads remain TDLib-managed until exported through a user-selected SAF destination. No broad storage permission is planned.
+- **Files:** Storage Access Framework URIs are staged into app-private temporary files for TDLib uploads. Completed TDLib downloads are verified and copied into app-private managed storage; explicit export then copies a managed file to a user-selected SAF destination. No broad storage permission is planned.
 
 ## Iterative delivery sequence
 
