@@ -6,6 +6,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.teledrive.preferences.AppTheme
 
 private val LightColors = lightColorScheme(
     primary = Color(0xFF176B87),
@@ -32,8 +33,12 @@ private val DarkColors = darkColorScheme(
 )
 
 @Composable
-fun TeleDriveTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun TeleDriveTheme(theme: AppTheme = AppTheme.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (theme) {
+        AppTheme.SYSTEM -> isSystemInDarkTheme()
+        AppTheme.LIGHT -> false
+        AppTheme.DARK -> true
+    }
     MaterialTheme(
         colorScheme = if (dark) DarkColors else LightColors,
         typography = TeleDriveTypography,
