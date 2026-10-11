@@ -114,6 +114,9 @@ object TransferRetryPolicy {
     fun isRetryable(code: String?, message: String? = null): Boolean {
         val normalizedCode = code.orEmpty().uppercase()
         if (normalizedCode in retryableCodes) return true
+        normalizedCode.toIntOrNull()?.let { numericCode ->
+            if (numericCode == 429 || numericCode >= 500) return true
+        }
         val normalizedMessage = message.orEmpty().uppercase()
         return listOf("NETWORK", "TIMEOUT", "FLOOD_WAIT", "CONNECTION").any(normalizedMessage::contains)
     }
