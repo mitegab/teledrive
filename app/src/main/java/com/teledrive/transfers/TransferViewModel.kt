@@ -8,6 +8,8 @@ import com.teledrive.core.domain.TelegramStorageGateway
 import com.teledrive.core.model.Transfer
 import com.teledrive.core.model.TransferProgress
 import com.teledrive.core.model.TransferState
+import com.teledrive.files.DownloadCoordinator
+import com.teledrive.files.UploadCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +27,8 @@ import kotlinx.coroutines.launch
 class TransferViewModel @Inject constructor(
     private val repository: FileIndexRepository,
     private val gateway: TelegramStorageGateway,
+    private val uploadCoordinator: UploadCoordinator,
+    private val downloadCoordinator: DownloadCoordinator,
 ) : ViewModel() {
     private val _state = MutableStateFlow(TransfersUiState())
     val state: StateFlow<TransfersUiState> = _state.asStateFlow()
@@ -40,8 +44,21 @@ class TransferViewModel @Inject constructor(
 
     fun cancel(transfer: Transfer) {
         viewModelScope.launch {
-            runCatching { gateway.cancelTransfer(transfer.id, transfer.direction, transfer.tdlibFileId) }
-                .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            runCatching {
+                gateway.cancelTransfer(transfer.id, transfer.direction, transfer.tdlibFileId)
+                if (transfer.direction == com.teledrive.core.model.TransferDirection.UPLOAD) uploadCoordinator.discardStagedSource(transfer)
+                repository.updateTransfer(com.teledrive.core.model.TransferStateMachine.reduce(transfer.copy(sourcePath = null), com.teledrive.core.model.TransferEvent.Cancel))
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+        }
+    }
+
+    fun retry(transfer: Transfer) {
+        if (transfer.state != TransferState.FAILED) return
+        viewModelScope.launch {
+            runCatching {
+                if (transfer.direction == com.teledrive.core.model.TransferDirection.UPLOAD) uploadCoordinator.retry(transfer)
+                else downloadCoordinator.retry(transfer)
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
         }
     }
 
