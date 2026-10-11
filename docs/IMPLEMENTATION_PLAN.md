@@ -8,7 +8,7 @@
 
 The checkout contained only the placeholder `README.md`; there was no Android or Gradle project to preserve. The project will therefore be built from a clean foundation, with each meaningful feature/subfeature committed separately on the Arena-provided branch.
 
-The execution environment currently has no JDK, Gradle installation, Android SDK, or Android NDK. The project will still include a reproducible Gradle wrapper configuration and build scripts. Build validation will be attempted after implementation; if the toolchain remains unavailable, the final report will distinguish code review/static validation from an actual APK build.
+At plan creation the execution environment had no JDK, Gradle installation, Android SDK, or Android NDK. A temporary JDK was later obtained for diagnostics, but the restricted sandbox cannot fetch the Gradle distribution or Android dependencies, and still has no Android SDK/NDK. The project includes a reproducible Gradle wrapper configuration and build scripts. The final report must distinguish code review/static validation from an actual APK build.
 
 ## Architecture decisions
 

@@ -136,6 +136,10 @@ Run the repository helper after installing the prerequisites:
 
 The helper pins the official TDLib commit, runs the upstream Android build path with the JSON-Java interface, and copies only the resulting `tdlib/libs/<abi>` libraries into the ignored `core/telegram/src/main/tdlib/jniLibs/` directory. The selected source commit and ABI list are recorded in `tools/TDLIB_VERSION`. A build without those libraries can compile the Kotlin/Java code and launch its onboarding screen, but live Telegram connection intentionally fails with a clear native-library configuration error; it is not a fabricated offline success.
 
+## App-level reliability behavior
+
+Transfer rows are persisted in Room. Upload staging paths are retained for retryable failures, while successful and explicitly canceled uploads remove their temporary source. Retryable failure backoff is represented in the transfer record, and a unique WorkManager job resumes queued/due work when Android grants a connected-network window. The worker never promises indefinite execution: Android can stop or defer background work, Telegram authorization can expire, and a non-retryable error remains visible for an explicit user retry. Downloads and uploads expose TDLib-reported progress and cancellation; a timer is never used as completion evidence.
+
 ## Live verification status
 
 No Telegram credentials or authenticated user session is available in this checkout. Therefore live authorization, Saved Messages discovery, upload, download, and deletion must be verified by a developer using their own account after native libraries and local credentials are configured. Fake-gateway tests cover the surrounding application behavior and are the only live-independent tests that may be reported as passing.
