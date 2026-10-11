@@ -29,6 +29,7 @@ The implementation and its deterministic regression coverage are captured in the
 - `ac4b127` (`test(transfer): cover cancellation failure policy`) adds JVM coverage for cancellation and retry policy.
 - `e7a6750` (`fix(transfer): preserve recovery on lifecycle cancellation`) keeps generic coroutine/WorkManager stops recoverable while the explicit UI cancellation path alone commits `CANCELED`.
 - `a8b0146` (`fix(build): repair TDLib helper shell syntax`) makes the native-build helper parse correctly and fail truthfully at the missing-SDK prerequisite.
+- `bb9c7d4` (`test(database): cover full remote reconciliation`) covers absence reconciliation while preserving local managed bytes.
 
 The targeted review and deterministic checks continue on the same branch.
 
