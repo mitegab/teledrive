@@ -18,6 +18,22 @@ enum class FileKind {
     UNKNOWN,
 }
 
+/**
+ * How Telegram represents the content. Distinct from [FileKind] (a user-facing category derived from name/MIME):
+ * a voice note and a music file are both AUDIO kind but need different handling.
+ */
+enum class MediaType {
+    PHOTO,
+    DOCUMENT,
+    VIDEO,
+    AUDIO,
+    VOICE_NOTE,
+    VIDEO_NOTE,
+    ANIMATION,
+    STICKER,
+    UNKNOWN,
+}
+
 enum class RemoteAvailability {
     UNKNOWN,
     AVAILABLE,
@@ -25,6 +41,10 @@ enum class RemoteAvailability {
     DELETED,
 }
 
+/**
+ * State of TeleDrive's own managed copy of the bytes. It is independent of [RemoteAvailability]: a file can be
+ * known remotely and absent locally. TDLib's private cache path is never recorded as a local copy.
+ */
 enum class LocalAvailability {
     NOT_DOWNLOADED,
     DOWNLOADING,
@@ -46,9 +66,18 @@ data class StoredFile(
     val remoteAvailability: RemoteAvailability = RemoteAvailability.UNKNOWN,
     val localAvailability: LocalAvailability = LocalAvailability.NOT_DOWNLOADED,
     val localPath: String? = null,
+    val mediaType: MediaType = MediaType.UNKNOWN,
+    /** TDLib `remoteFile.unique_id`: stays the same when TDLib re-issues a file id, so it can re-identify the bytes. */
+    val remoteUniqueId: String? = null,
+    val thumbnailFileId: Int? = null,
+    val durationSeconds: Int? = null,
+    /** Size of the managed local copy when it was last verified; used to detect truncated or replaced files. */
+    val localSizeBytes: Long? = null,
 ) {
     val stableId: String get() = remote.value
     val kind: FileKind get() = FileKindDetector.detect(originalFilename, mimeType)
+    val displayName: String get() = originalFilename
+    val isRemoteDeleted: Boolean get() = remoteAvailability == RemoteAvailability.DELETED
 }
 
 data class Folder(
