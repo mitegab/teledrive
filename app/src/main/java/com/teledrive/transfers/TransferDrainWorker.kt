@@ -28,9 +28,10 @@ class TransferDrainWorker(
         val transfers = dependencies.repository.observeTransfers().first()
         var failed = false
         val now = System.currentTimeMillis() / 1000
-        transfers.filter {
-            it.state == TransferState.QUEUED ||
-                (it.state == TransferState.FAILED && it.retryAtEpochSeconds != null && it.retryAtEpochSeconds <= now)
+        transfers.filter { transfer ->
+            val retryAt = transfer.retryAtEpochSeconds
+            transfer.state == TransferState.QUEUED ||
+                (transfer.state == TransferState.FAILED && retryAt != null && retryAt <= now)
         }.forEach { transfer ->
             val retryable = transfer.direction != com.teledrive.core.model.TransferDirection.UPLOAD || !transfer.sourcePath.isNullOrBlank()
             if (!retryable) {
