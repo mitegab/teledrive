@@ -44,17 +44,21 @@ class TransferViewModel @Inject constructor(
 
     fun cancel(transfer: Transfer) {
         viewModelScope.launch {
-            val gatewayError = if (transfer.state == TransferState.RUNNING) {
-                runCatching { gateway.cancelTransfer(transfer.id, transfer.direction, transfer.tdlibFileId) }.exceptionOrNull()
+            val current = repository.getTransfer(transfer.id.value) ?: transfer
+            if (current.state in setOf(TransferState.COMPLETED, TransferState.CANCELED)) return@launch
+            val gatewayError = if (current.state == TransferState.RUNNING) {
+                runCatching { gateway.cancelTransfer(current.id, current.direction, current.tdlibFileId) }.exceptionOrNull()
             } else null
-            if (transfer.direction == com.teledrive.core.model.TransferDirection.DOWNLOAD) {
-                downloadCoordinator.cancel(transfer.remote?.value)
+            if (current.direction == com.teledrive.core.model.TransferDirection.DOWNLOAD) {
+                downloadCoordinator.cancel(current.remote?.value)
             } else {
-                uploadCoordinator.cancel(transfer.id)
+                uploadCoordinator.cancel(current.id)
             }
             runCatching {
-                if (transfer.direction == com.teledrive.core.model.TransferDirection.UPLOAD) uploadCoordinator.discardStagedSource(transfer)
-                repository.updateTransfer(com.teledrive.core.model.TransferStateMachine.reduce(transfer.copy(sourcePath = null), com.teledrive.core.model.TransferEvent.Cancel))
+                val settled = repository.getTransfer(current.id.value) ?: current
+                if (settled.direction == com.teledrive.core.model.TransferDirection.UPLOAD) uploadCoordinator.discardStagedSource(settled)
+                val latest = repository.getTransfer(current.id.value) ?: settled.copy(sourcePath = null)
+                repository.updateTransfer(com.teledrive.core.model.TransferStateMachine.reduce(latest.copy(sourcePath = null), com.teledrive.core.model.TransferEvent.Cancel))
             }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
             if (gatewayError != null) _state.update { it.copy(errorMessage = gatewayError.safeMessage()) }
         }
