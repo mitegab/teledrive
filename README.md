@@ -42,6 +42,12 @@ The native build is deliberately not replaced with a mock. Until it has run, the
 
 The debug APK, when the Android toolchain is available, is produced at `app/build/outputs/apk/debug/app-debug.apk`.
 
+## Current verification status
+
+The repository contains the real gateway boundary, TDLib authorization flow, Saved Messages indexing, SAF upload/download/export/open/share flows, Room metadata, virtual-folder metadata synchronization, persisted transfers, retry controls, WorkManager resumption, settings, and deterministic fake-gateway tests. This checkout has **not** been authenticated against a live Telegram account.
+
+The sandbox has no Android SDK/NDK and cannot fetch the Gradle distribution from its restricted network, so no Gradle test, lint result, or APK is claimed here. Run the validation commands above on a machine with the documented Android toolchain. Do not treat fake-gateway tests as live Telegram verification.
+
 ## Important product limitations
 
 - Saved Messages is ordinary Telegram cloud data; TeleDrive does not claim end-to-end encryption or a Telegram storage quota.
