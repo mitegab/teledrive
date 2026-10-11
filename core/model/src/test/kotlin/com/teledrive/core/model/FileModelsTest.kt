@@ -11,6 +11,7 @@ class FileModelsTest {
         assertEquals(FileKind.VIDEO, FileKindDetector.detect("clip.bin", "video/mp4"))
         assertEquals(FileKind.ARCHIVE, FileKindDetector.detect("archive.TAR.GZ", null))
         assertEquals(FileKind.TEXT, FileKindDetector.detect("notes", "text/plain"))
+        assertEquals(FileKind.DOCUMENT, FileKindDetector.detect("report.pdf", "application/pdf"))
         assertEquals(FileKind.DOCUMENT, FileKindDetector.detect("report.docx", null))
     }
 

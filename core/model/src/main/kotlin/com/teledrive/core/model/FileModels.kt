@@ -98,7 +98,8 @@ object FileKindDetector {
             mime.startsWith("image/") -> FileKind.IMAGE
             mime.startsWith("video/") -> FileKind.VIDEO
             mime.startsWith("audio/") -> FileKind.AUDIO
-            mime == "application/pdf" || mime.startsWith("text/") -> FileKind.TEXT
+            mime.startsWith("text/") -> FileKind.TEXT
+            mime == "application/pdf" -> FileKind.DOCUMENT
             mime in setOf(
                 "application/zip",
                 "application/x-rar-compressed",
