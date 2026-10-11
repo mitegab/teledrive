@@ -66,7 +66,7 @@ class UploadCoordinator @Inject constructor(
         } catch (error: Throwable) {
             val running = TransferStateMachine.reduce(queued, TransferEvent.Start)
             repository.updateTransfer(
-                TransferStateMachine.reduce(running, TransferEvent.Fail(error.message ?: "Upload failed", retryable = true)),
+                TransferStateMachine.reduce(running, error.toTransferFailure(running.attempt)),
             )
             workScheduler.enqueue()
             throw error
@@ -83,7 +83,8 @@ class UploadCoordinator @Inject constructor(
     suspend fun retry(transfer: Transfer): StoredFile = withContext(Dispatchers.IO) {
         val sourcePath = transfer.sourcePath?.takeIf { File(it).isFile }
             ?: throw IOException("The staged upload file is no longer available; choose the file again")
-        val running = TransferStateMachine.reduce(transfer, TransferEvent.Start)
+        val queued = TransferStateMachine.reduce(transfer, TransferEvent.Retry)
+        val running = TransferStateMachine.reduce(queued, TransferEvent.Start)
         repository.updateTransfer(running)
         try {
             val result = gateway.uploadDocument(
@@ -103,7 +104,7 @@ class UploadCoordinator @Inject constructor(
             File(sourcePath).delete()
             result.file
         } catch (error: Throwable) {
-            repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Fail(error.message ?: "Upload failed", retryable = true)))
+            repository.updateTransfer(TransferStateMachine.reduce(running, error.toTransferFailure(running.attempt)))
             workScheduler.enqueue()
             throw error
         }

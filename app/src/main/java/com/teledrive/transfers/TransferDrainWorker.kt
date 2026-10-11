@@ -27,9 +27,16 @@ class TransferDrainWorker(
         runCatching { dependencies.gateway.start() }.getOrElse { return Result.retry() }
         val transfers = dependencies.repository.observeTransfers().first()
         var failed = false
-        transfers.filter { it.state == TransferState.QUEUED || it.state == TransferState.FAILED }.forEach { transfer ->
+        val now = System.currentTimeMillis() / 1000
+        transfers.filter {
+            it.state == TransferState.QUEUED ||
+                (it.state == TransferState.FAILED && it.retryAtEpochSeconds != null && it.retryAtEpochSeconds <= now)
+        }.forEach { transfer ->
             val retryable = transfer.direction != com.teledrive.core.model.TransferDirection.UPLOAD || !transfer.sourcePath.isNullOrBlank()
-            if (!retryable) return@forEach
+            if (!retryable) {
+                dependencies.repository.updateTransfer(transfer.copy(state = TransferState.FAILED, errorMessage = "The staged upload file is no longer available", retryAtEpochSeconds = null))
+                return@forEach
+            }
             runCatching {
                 if (transfer.direction == com.teledrive.core.model.TransferDirection.UPLOAD) dependencies.uploadCoordinator.retry(transfer)
                 else dependencies.downloadCoordinator.retry(transfer)

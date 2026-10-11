@@ -26,9 +26,17 @@ class TransferAndMetadataTest {
 
     @Test
     fun failedTransfersCanRetryButCompletedTransfersCannot() {
-        val failed = TransferStateMachine.reduce(transfer(TransferState.RUNNING), TransferEvent.Fail("network", true))
+        val failed = TransferStateMachine.reduce(transfer(TransferState.RUNNING), TransferEvent.Fail("network", true, retryAtEpochSeconds = 30))
+        assertEquals(30, failed.retryAtEpochSeconds)
         assertEquals(TransferState.QUEUED, TransferStateMachine.reduce(failed, TransferEvent.Retry).state)
         assertEquals(TransferState.COMPLETED, TransferStateMachine.reduce(transfer(TransferState.COMPLETED), TransferEvent.Retry).state)
+    }
+
+    @Test
+    fun nonRetryableFailureDoesNotScheduleBackgroundWork() {
+        val failed = TransferStateMachine.reduce(transfer(TransferState.RUNNING), TransferEvent.Fail("bad request", false, retryAtEpochSeconds = 30))
+        assertEquals(null, failed.retryAtEpochSeconds)
+        assertEquals(TransferState.FAILED, failed.state)
     }
 
     @Test

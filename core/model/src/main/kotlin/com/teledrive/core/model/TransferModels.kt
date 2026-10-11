@@ -52,7 +52,7 @@ sealed interface TransferEvent {
     data object Start : TransferEvent
     data class Progress(val bytes: Long, val totalBytes: Long?) : TransferEvent
     data object Complete : TransferEvent
-    data class Fail(val message: String, val retryable: Boolean) : TransferEvent
+    data class Fail(val message: String, val retryable: Boolean, val retryAtEpochSeconds: Long? = null) : TransferEvent
     data object Cancel : TransferEvent
     data object Retry : TransferEvent
 }
@@ -81,6 +81,7 @@ object TransferStateMachine {
             is TransferEvent.Fail -> current.copy(
                 state = TransferState.FAILED,
                 errorMessage = event.message,
+                retryAtEpochSeconds = event.retryAtEpochSeconds.takeIf { event.retryable },
             )
 
             TransferEvent.Cancel -> if (current.state in setOf(TransferState.QUEUED, TransferState.RUNNING)) {
