@@ -1,7 +1,8 @@
 [versions]
 agp = "9.2.0"
 kotlin = "2.2.10"
-compile-sdk = "36"
+ksp = "2.2.10-2.0.2"
+compile-sdk = "37"
 min-sdk = "26"
 target-sdk = "36"
 compose-bom = "2026.09.00"
@@ -13,7 +14,7 @@ room = "2.8.5"
 datastore = "1.2.1"
 work = "2.12.0"
 security-crypto = "1.1.0"
-hilt = "2.57.1"
+hilt = "2.59.2"
 hilt-androidx = "1.4.0"
 coroutines = "1.10.2"
 serialization = "1.9.0"
@@ -59,5 +60,6 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }

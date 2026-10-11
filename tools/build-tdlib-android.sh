@@ -6,7 +6,7 @@ set -euo pipefail
 # committing a large, environment-specific binary and makes the provenance
 # explicit for every local/live build.
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION_FILE="$ROOT_DIR/tools/TDLIB_VERSION"
 # shellcheck disable=SC1090
 source "$VERSION_FILE"
