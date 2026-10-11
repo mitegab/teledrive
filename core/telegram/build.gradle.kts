@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
 }
 
 android {
@@ -16,6 +15,10 @@ android {
             jniLibs.srcDir("src/main/tdlib/jniLibs")
         }
     }
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {

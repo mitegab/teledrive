@@ -77,8 +77,9 @@ private fun TransferRow(transfer: Transfer, onCancel: (Transfer) -> Unit, onRetr
                 Text("${transfer.bytesTransferred.formatBytes()} of ${transfer.totalBytes.formatBytes()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (transfer.state == TransferState.FAILED) {
+                val errorMessage = transfer.errorMessage
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (transfer.errorMessage != null) Text(transfer.errorMessage, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    if (errorMessage != null) Text(errorMessage, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     IconButton(onClick = { onRetry(transfer) }) { Icon(Icons.Rounded.Refresh, contentDescription = "Retry transfer") }
                 }
             }

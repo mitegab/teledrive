@@ -10,7 +10,7 @@ import com.teledrive.core.model.TransferState
 import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.UploadCoordinator
 import dagger.hilt.android.EntryPointAccessors
-import dagger.hilt.android.InstallIn
+import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import java.io.File
 import dagger.hilt.EntryPoint
