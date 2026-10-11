@@ -50,6 +50,12 @@ class TransferAndMetadataTest {
     }
 
     @Test
+    fun serverAndRateLimitCodesAreRetryableEvenWithGenericMessages() {
+        assertTrue(TransferRetryPolicy.isRetryable("500", "Internal Server Error"))
+        assertTrue(TransferRetryPolicy.isRetryable("429", "Too Many Requests"))
+    }
+
+    @Test
     fun metadataRoundTripsUnicodeAndIgnoresMalformedRecords() {
         val record = MetadataRecord(
             operationId = "op-1",
