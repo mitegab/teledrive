@@ -8,7 +8,7 @@ import kotlinx.coroutines.CancellationException
 internal fun Throwable.toTransferFailure(attempt: Int): TransferEvent.Fail {
     val retryable = when (this) {
         is CancellationException -> false
-        is StorageGatewayException -> retryable
+        is StorageGatewayException -> this.retryable
         else -> true
     }
     val retryAt = if (retryable) {
