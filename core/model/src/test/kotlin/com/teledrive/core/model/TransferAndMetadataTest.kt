@@ -60,9 +60,11 @@ class TransferAndMetadataTest {
         val folder = MetadataRecord(1, "create", "b", 1, 1, MetadataOperation.CreateFolder("f", "Folder"))
         val rename = MetadataRecord(1, "rename", "a", 2, 2, MetadataOperation.RenameFolder("f", "Renamed"))
         val favorite = MetadataRecord(1, "favorite", "a", 3, 3, MetadataOperation.FavoriteFile("1:2", true))
-        val snapshot = MetadataMerger.merge(listOf(rename, favorite, folder, folder))
+        val unfavorite = MetadataRecord(1, "unfavorite", "a", 4, 4, MetadataOperation.FavoriteFile("1:2", false))
+        val snapshot = MetadataMerger.merge(listOf(rename, favorite, unfavorite, folder, folder))
         assertEquals("Renamed", snapshot.folders["f"]?.name)
-        assertTrue("1:2" in snapshot.favoriteFileIds)
-        assertEquals(3, snapshot.appliedOperationIds.size)
+        assertTrue("1:2" !in snapshot.favoriteFileIds)
+        assertEquals(false, snapshot.favoriteFileStates["1:2"])
+        assertEquals(4, snapshot.appliedOperationIds.size)
     }
 }

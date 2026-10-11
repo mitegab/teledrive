@@ -205,9 +205,10 @@ class FileLibraryViewModel @Inject constructor(
     }
 
     private suspend fun applyMetadataSnapshot(snapshot: com.teledrive.core.model.MetadataSnapshot) {
+        snapshot.deletedFolderIds.forEach { repository.deleteFolder(it) }
         snapshot.folders.values.forEach { repository.upsertFolder(it) }
         snapshot.fileFolderIds.forEach { (fileId, folderId) -> repository.setFolder(fileId, folderId) }
-        snapshot.favoriteFileIds.forEach { fileId -> repository.setFavorite(fileId, true) }
+        snapshot.favoriteFileStates.forEach { (fileId, favorite) -> repository.setFavorite(fileId, favorite) }
     }
 
     fun clearError() = _state.update { it.copy(errorMessage = null) }

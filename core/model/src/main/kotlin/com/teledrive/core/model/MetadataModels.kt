@@ -80,6 +80,8 @@ data class MetadataSnapshot(
     val folders: Map<String, Folder> = emptyMap(),
     val fileFolderIds: Map<String, String?> = emptyMap(),
     val favoriteFileIds: Set<String> = emptySet(),
+    val favoriteFileStates: Map<String, Boolean> = emptyMap(),
+    val deletedFolderIds: Set<String> = emptySet(),
     val appliedOperationIds: Set<String> = emptySet(),
 )
 
@@ -88,6 +90,8 @@ object MetadataMerger {
         val folders = linkedMapOf<String, Folder>()
         val fileFolders = linkedMapOf<String, String?>()
         val favorites = linkedSetOf<String>()
+        val favoriteStates = linkedMapOf<String, Boolean>()
+        val deletedFolders = linkedSetOf<String>()
         val applied = linkedSetOf<String>()
         val ordered = records
             .filter { it.schema == 1 }
@@ -99,6 +103,7 @@ object MetadataMerger {
             val timestamp = if (record.timestampEpochSeconds > 0) record.timestampEpochSeconds else nowEpochSeconds
             when (val operation = record.operation) {
                 is MetadataOperation.CreateFolder -> {
+                    deletedFolders.remove(operation.folderId)
                     folders[operation.folderId] = Folder(
                         id = operation.folderId,
                         name = operation.name,
@@ -111,6 +116,7 @@ object MetadataMerger {
                     folders[operation.folderId] = existing.copy(name = operation.name, modifiedAtEpochSeconds = timestamp)
                 }
                 is MetadataOperation.DeleteFolder -> {
+                    deletedFolders.add(operation.folderId)
                     folders.remove(operation.folderId)
                     fileFolders.entries.filter { it.value == operation.folderId }.forEach { entry ->
                         fileFolders[entry.key] = null
@@ -119,9 +125,12 @@ object MetadataMerger {
                 is MetadataOperation.MoveFile -> {
                     fileFolders[operation.fileId] = operation.folderId?.takeIf(folders::containsKey)
                 }
-                is MetadataOperation.FavoriteFile -> if (operation.favorite) favorites.add(operation.fileId) else favorites.remove(operation.fileId)
+                is MetadataOperation.FavoriteFile -> {
+                    favoriteStates[operation.fileId] = operation.favorite
+                    if (operation.favorite) favorites.add(operation.fileId) else favorites.remove(operation.fileId)
+                }
             }
         }
-        return MetadataSnapshot(folders, fileFolders, favorites, applied)
+        return MetadataSnapshot(folders, fileFolders, favorites, favoriteStates, deletedFolders, applied)
     }
 }
