@@ -88,6 +88,30 @@ class RoomFileIndexRepositoryTest {
     }
 
     @Test
+    fun fullHistoryReconciliationMarksOnlyMissingRemoteEntries() = runBlocking {
+        val present = StoredFile(RemoteMessageId(3, 1), 6, "present.pdf", "application/pdf", 4, 1, remoteAvailability = RemoteAvailability.AVAILABLE)
+        val missing = StoredFile(
+            RemoteMessageId(3, 2),
+            7,
+            "missing.pdf",
+            "application/pdf",
+            5,
+            1,
+            remoteAvailability = RemoteAvailability.AVAILABLE,
+            localAvailability = LocalAvailability.AVAILABLE,
+            localPath = "/managed/missing.pdf",
+        )
+        repository.upsertFiles(listOf(present, missing))
+        repository.reconcileRemoteFiles(setOf(present.stableId))
+
+        assertEquals(RemoteAvailability.AVAILABLE, repository.observeFile(present.stableId).first()?.remoteAvailability)
+        val actualMissing = repository.observeFile(missing.stableId).first()
+        assertEquals(RemoteAvailability.DELETED, actualMissing?.remoteAvailability)
+        assertEquals(LocalAvailability.AVAILABLE, actualMissing?.localAvailability)
+        assertEquals("/managed/missing.pdf", actualMissing?.localPath)
+    }
+
+    @Test
     fun deletingLocalCopyDoesNotRemoveRemoteIndex() = runBlocking {
         val file = StoredFile(RemoteMessageId(1, 2), 3, "a.txt", "text/plain", 1, 1, remoteAvailability = RemoteAvailability.AVAILABLE, localAvailability = LocalAvailability.AVAILABLE, localPath = "/tmp/a.txt")
         repository.upsertFiles(listOf(file))
