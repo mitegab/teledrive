@@ -179,6 +179,11 @@ class FileLibraryViewModel @Inject constructor(
         }
     }
 
+    fun open(file: StoredFile, share: Boolean = false) {
+        runCatching { downloadCoordinator.launchLocalFile(file, share) }
+            .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+    }
+
     fun deleteLocalCopy(file: StoredFile) {
         viewModelScope.launch {
             runCatching { downloadCoordinator.removeLocalCopy(file) }
