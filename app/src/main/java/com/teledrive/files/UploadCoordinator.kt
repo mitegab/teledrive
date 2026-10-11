@@ -14,6 +14,7 @@ import com.teledrive.core.model.TransferEvent
 import com.teledrive.core.model.TransferId
 import com.teledrive.core.model.TransferState
 import com.teledrive.core.model.TransferStateMachine
+import com.teledrive.transfers.ActiveTransferRegistry
 import com.teledrive.transfers.TransferWorkScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -28,6 +29,7 @@ class UploadCoordinator @Inject constructor(
     private val gateway: TelegramStorageGateway,
     private val repository: FileIndexRepository,
     private val workScheduler: TransferWorkScheduler,
+    private val activeTransfers: ActiveTransferRegistry,
 ) {
     suspend fun upload(uri: Uri): StoredFile = withContext(Dispatchers.IO) {
         val staged = stage(uri)
@@ -44,6 +46,7 @@ class UploadCoordinator @Inject constructor(
         var completed = false
         try {
             repository.updateTransfer(TransferStateMachine.reduce(queued, TransferEvent.Start))
+            activeTransfers.markActive(transferId.value)
             workScheduler.enqueue()
             val result = gateway.uploadDocument(
                 UploadRequest(
@@ -71,6 +74,7 @@ class UploadCoordinator @Inject constructor(
             workScheduler.enqueue()
             throw error
         } finally {
+            activeTransfers.clear(transferId.value)
             if (completed) staged.file.delete()
         }
     }
@@ -86,6 +90,7 @@ class UploadCoordinator @Inject constructor(
         val queued = TransferStateMachine.reduce(transfer, TransferEvent.Retry)
         val running = TransferStateMachine.reduce(queued, TransferEvent.Start)
         repository.updateTransfer(running)
+        activeTransfers.markActive(transfer.id.value)
         try {
             val result = gateway.uploadDocument(
                 UploadRequest(
@@ -107,6 +112,8 @@ class UploadCoordinator @Inject constructor(
             repository.updateTransfer(TransferStateMachine.reduce(running, error.toTransferFailure(running.attempt)))
             workScheduler.enqueue()
             throw error
+        } finally {
+            activeTransfers.clear(transfer.id.value)
         }
     }
 
