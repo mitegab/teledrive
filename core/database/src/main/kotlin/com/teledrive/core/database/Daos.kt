@@ -17,6 +17,9 @@ interface StoredFileDao {
     @Query("SELECT * FROM stored_files WHERE stableId = :stableId LIMIT 1")
     suspend fun getById(stableId: String): StoredFileEntity?
 
+    @Query("SELECT * FROM stored_files")
+    suspend fun getAll(): List<StoredFileEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(file: StoredFileEntity)
 

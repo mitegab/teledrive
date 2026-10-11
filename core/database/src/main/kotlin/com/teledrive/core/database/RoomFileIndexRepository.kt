@@ -58,6 +58,12 @@ class RoomFileIndexRepository(
     override suspend fun markRemoteDeleted(remote: com.teledrive.core.model.RemoteMessageId) =
         files.setRemoteAvailability(remote.value, com.teledrive.core.model.RemoteAvailability.DELETED.name)
 
+    override suspend fun reconcileRemoteFiles(seenRemoteIds: Set<String>) = database.withTransaction {
+        files.getAll()
+            .filterNot { it.stableId in seenRemoteIds }
+            .forEach { files.setRemoteAvailability(it.stableId, com.teledrive.core.model.RemoteAvailability.DELETED.name) }
+    }
+
     override suspend fun deleteLocalFile(remoteId: String) = files.clearLocalCopy(remoteId)
 
     override suspend fun setFolder(remoteId: String, folderId: String?) = files.setFolder(remoteId, folderId)

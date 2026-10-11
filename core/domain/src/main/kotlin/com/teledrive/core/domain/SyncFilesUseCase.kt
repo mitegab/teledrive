@@ -20,6 +20,8 @@ class SynchronizeFilesUseCase(
     suspend operator fun invoke(pageSize: Int = 100): SyncSummary {
         require(pageSize in 1..100) { "TDLib getChatHistory accepts at most 100 messages per page" }
         var cursor = repository.getHistoryCursor()
+        val fullHistoryScan = cursor.fromMessageId == 0L
+        val seenRemoteIds = mutableSetOf<String>()
         val visitedCursors = mutableSetOf(cursor.fromMessageId)
         var pages = 0
         var filesSeen = 0
@@ -28,6 +30,7 @@ class SynchronizeFilesUseCase(
             val page = gateway.getFilesPage(cursor, pageSize)
             pages++
             filesSeen += page.files.size
+            if (fullHistoryScan) page.files.forEach { seenRemoteIds += it.stableId }
             // Persist the page before advancing the checkpoint. A failed Room write leaves the
             // previous cursor available for a safe retry after process recreation.
             repository.upsertFiles(page.files)
@@ -40,6 +43,7 @@ class SynchronizeFilesUseCase(
             repository.saveHistoryCursor(next)
             cursor = next
         }
+        if (complete && fullHistoryScan) repository.reconcileRemoteFiles(seenRemoteIds)
         repository.saveHistoryCursor(if (complete) HistoryCursor() else cursor)
         return SyncSummary(pages = pages, filesSeen = filesSeen, complete = complete)
     }

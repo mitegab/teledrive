@@ -32,7 +32,7 @@ The original upload path treated `sendMessage`'s immediate response as mandatory
 
 ### Synchronization
 
-The mapper now covers document/PDF/ZIP content, photos, videos, audio/music, voice notes, animations, video notes, and intentionally supported stickers using TDLib's type-specific nested file fields. Regression fixtures cover the supported shapes, MIME-derived names, largest-photo selection, unknown messages, remote-only state, cursor checkpoints, repeated pages, and deduplication through Room identity preservation. Synchronization advances only after page persistence and bounds pathological cursor loops.
+The mapper now covers document/PDF/ZIP content, photos, videos, audio/music, voice notes, animations, video notes, and intentionally supported stickers using TDLib's type-specific nested file fields. Regression fixtures cover the supported shapes, MIME-derived names, largest-photo selection, permanent-vs-cache-only deletion updates, unknown messages, remote-only state, cursor checkpoints, repeated pages, and deduplication through Room identity preservation. Synchronization advances only after page persistence, reconciles absence only after a completed full scan, and bounds pathological cursor loops.
 
 ### Local storage
 
