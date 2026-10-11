@@ -1,0 +1,7 @@
+# Copy this file to local.properties and fill in values obtained from https://my.telegram.org.
+# Never commit local.properties or share api_hash in chat.
+TELEGRAM_API_ID=000000
+TELEGRAM_API_HASH=replace-with-your-api-hash
+
+# Optional Android SDK path if Android Studio does not provide it.
+# sdk.dir=/absolute/path/to/Android/Sdk

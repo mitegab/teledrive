@@ -1,0 +1,30 @@
+# Gradle / Android build output
+.gradle/
+**/build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Signing and secrets
+*.jks
+*.keystore
+*.p12
+.env
+
+# TDLib generated/native output (build locally; never commit user sessions)
+tools/.tdlib-source/
+core/telegram/src/main/tdlib/jniLibs/*
+!core/telegram/src/main/tdlib/jniLibs/.gitkeep
+core/telegram/src/main/tdlib/generated/
+
+# Local TDLib databases, staged files, exports and test fixtures
+**/tdlib-data/
+**/staging/
+**/exports/
+*.telegram-session
+
+# Generated reports
+captures/
