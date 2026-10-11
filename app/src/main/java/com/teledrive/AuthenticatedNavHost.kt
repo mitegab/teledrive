@@ -23,11 +23,12 @@ import androidx.navigation.compose.rememberNavController
 import com.teledrive.session.SessionViewModel
 import com.teledrive.files.FileBrowserScreen
 import com.teledrive.transfers.TransfersScreen
+import com.teledrive.settings.SettingsViewModel
 
 private data class TopLevelDestination(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
 @Composable
-fun AuthenticatedNavHost(sessionViewModel: SessionViewModel) {
+fun AuthenticatedNavHost(sessionViewModel: SessionViewModel, settingsViewModel: SettingsViewModel) {
     val navController = rememberNavController()
     val destinations = remember {
         listOf(
@@ -63,7 +64,7 @@ fun AuthenticatedNavHost(sessionViewModel: SessionViewModel) {
             composable("home") { HomeScreen(onOpenFiles = { navController.navigate("files") }, onLogout = sessionViewModel::logout) }
             composable("files") { FileBrowserScreen() }
             composable("transfers") { TransfersScreen() }
-            composable("settings") { SettingsScreen(onLogout = sessionViewModel::logout) }
+            composable("settings") { SettingsScreen(settingsViewModel = settingsViewModel, onLogout = sessionViewModel::logout) }
         }
     }
 }

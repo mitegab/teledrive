@@ -3,10 +3,11 @@ package com.teledrive
 import androidx.compose.runtime.Composable
 import com.teledrive.session.SessionUiState
 import com.teledrive.session.SessionViewModel
+import com.teledrive.settings.SettingsViewModel
 import com.teledrive.core.model.AuthorizationState
 
 @Composable
-fun TeleDriveRoot(session: SessionUiState, sessionViewModel: SessionViewModel) {
+fun TeleDriveRoot(session: SessionUiState, sessionViewModel: SessionViewModel, settingsViewModel: SettingsViewModel) {
     when (val state = session.authorizationState) {
         AuthorizationState.Uninitialized,
         AuthorizationState.Closed,
@@ -17,7 +18,7 @@ fun TeleDriveRoot(session: SessionUiState, sessionViewModel: SessionViewModel) {
             onConnect = sessionViewModel::connect,
         )
 
-        AuthorizationState.Ready -> AuthenticatedNavHost(sessionViewModel = sessionViewModel)
+        AuthorizationState.Ready -> AuthenticatedNavHost(sessionViewModel = sessionViewModel, settingsViewModel = settingsViewModel)
         else -> AuthenticationScreen(
             state = state,
             errorMessage = session.actionError,
