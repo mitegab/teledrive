@@ -38,11 +38,18 @@ class UploadCoordinator @Inject constructor(
     private val activeTransfers: ActiveTransferRegistry,
 ) {
     private val activeUploads = ConcurrentHashMap<String, Job>()
+    private val explicitCancellations = ConcurrentHashMap.newKeySet<String>()
 
     suspend fun cancel(transferId: TransferId) {
         val job = activeUploads[transferId.value] ?: return
-        job.cancel(CancellationException("Transfer cancelled by user"))
-        runCatching { job.join() }
+        if (job.isCompleted) return
+        explicitCancellations += transferId.value
+        try {
+            job.cancel(CancellationException("Transfer cancelled by user"))
+            runCatching { job.join() }
+        } finally {
+            explicitCancellations.remove(transferId.value)
+        }
     }
 
     suspend fun upload(uri: Uri): StoredFile = withContext(Dispatchers.IO) {
@@ -85,10 +92,11 @@ class UploadCoordinator @Inject constructor(
             completed = true
             storedFile
         } catch (cancelled: CancellationException) {
-            withContext(NonCancellable) {
-                runCatching { gateway.cancelTransfer(transferId, TransferDirection.UPLOAD) }
-                repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Cancel))
+            if (explicitCancellations.remove(transferId.value)) {
+                withContext(NonCancellable) { runCatching { gateway.cancelTransfer(transferId, TransferDirection.UPLOAD) } }
             }
+            // A worker/lifecycle stop leaves the persisted RUNNING row recoverable. The explicit
+            // UI cancellation path settles it after this job has joined.
             throw cancelled
         } catch (error: Throwable) {
             val failure = error.toTransferFailure(running.attempt)
@@ -136,9 +144,8 @@ class UploadCoordinator @Inject constructor(
             localStorage.removeStagedSource(sourcePath)
             storedFile
         } catch (cancelled: CancellationException) {
-            withContext(NonCancellable) {
-                runCatching { gateway.cancelTransfer(transfer.id, TransferDirection.UPLOAD) }
-                repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Cancel))
+            if (explicitCancellations.remove(transfer.id.value)) {
+                withContext(NonCancellable) { runCatching { gateway.cancelTransfer(transfer.id, TransferDirection.UPLOAD) } }
             }
             throw cancelled
         } catch (error: Throwable) {
