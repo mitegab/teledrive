@@ -149,11 +149,18 @@ internal fun JSONObject.completedDownload(): Boolean = safeObject("local")?.optB
 
 internal fun JSONObject.completedUpload(): Boolean = safeObject("remote")?.optBoolean("is_uploading_completed", false) == true
 
+// TDLib 1.8.68: inputMessageDocument.document is an inputDocument (not a bare InputFile);
+// the InputFile, thumbnail and content-type detection flag live inside inputDocument.
 internal fun inputMessageDocument(path: String): JSONObject = JSONObject()
     .put("@type", "inputMessageDocument")
-    .put("document", JSONObject().put("@type", "inputFileLocal").put("path", path))
-    .put("thumbnail", JSONObject.NULL)
-    .put("disable_content_type_detection", false)
+    .put(
+        "document",
+        JSONObject()
+            .put("@type", "inputDocument")
+            .put("document", JSONObject().put("@type", "inputFileLocal").put("path", path))
+            .put("thumbnail", JSONObject.NULL)
+            .put("disable_content_type_detection", false),
+    )
     .put("caption", JSONObject.NULL)
 
 internal fun inputMessageText(text: String): JSONObject = JSONObject()
