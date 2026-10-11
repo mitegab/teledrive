@@ -1,6 +1,7 @@
 package com.teledrive.core.domain
 
 import com.teledrive.core.model.AuthorizationState
+import com.teledrive.core.model.MetadataMessagesPage
 import com.teledrive.core.model.MetadataOperation
 import com.teledrive.core.model.RemoteMessageId
 import com.teledrive.core.model.TransferProgress
@@ -45,6 +46,7 @@ class MetadataSyncTest {
         override suspend fun getCurrentUser() = error("unused")
         override suspend fun getSavedMessagesChat() = error("unused")
         override suspend fun getFilesPage(cursor: com.teledrive.core.model.HistoryCursor, limit: Int) = error("unused")
+        override suspend fun getMetadataMessagesPage(cursor: com.teledrive.core.model.HistoryCursor, limit: Int) = MetadataMessagesPage(emptyList(), null)
         override suspend fun uploadDocument(request: UploadRequest) = error("unused")
         override suspend fun downloadFile(request: DownloadRequest) = error("unused")
         override suspend fun cancelTransfer(transferId: com.teledrive.core.model.TransferId, direction: com.teledrive.core.model.TransferDirection, tdlibFileId: Int?) = Unit

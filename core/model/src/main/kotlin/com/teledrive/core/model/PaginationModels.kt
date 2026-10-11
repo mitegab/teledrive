@@ -8,6 +8,11 @@ data class FilesPage(
     val approximateTotalCount: Int? = null,
 )
 
+data class MetadataMessagesPage(
+    val records: List<String>,
+    val nextCursor: HistoryCursor?,
+)
+
 object HistoryPagination {
     fun nextCursor(current: HistoryCursor, page: FilesPage): HistoryCursor? {
         if (page.files.isEmpty()) return null

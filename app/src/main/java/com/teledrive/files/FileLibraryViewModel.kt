@@ -16,8 +16,11 @@ import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.SortDirection
 import com.teledrive.core.model.SortField
 import com.teledrive.core.model.StoredFile
+import com.teledrive.core.model.MetadataOperation
 import com.teledrive.core.model.TransferProgress
+import com.teledrive.metadata.MetadataSyncWriter
 import com.teledrive.preferences.PreferencesRepository
+import java.util.UUID
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +28,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -49,6 +53,7 @@ class FileLibraryViewModel @Inject constructor(
     private val uploadCoordinator: UploadCoordinator,
     private val downloadCoordinator: DownloadCoordinator,
     private val preferences: PreferencesRepository,
+    private val metadataWriter: MetadataSyncWriter,
 ) : ViewModel() {
     private val query = MutableStateFlow(FileQuery())
     private val sort = MutableStateFlow(FileSort())
@@ -79,7 +84,12 @@ class FileLibraryViewModel @Inject constructor(
         if (_state.value.isSyncing) return
         viewModelScope.launch {
             _state.update { it.copy(isSyncing = true, errorMessage = null) }
-            runCatching { synchronizeFiles() }
+            runCatching {
+                synchronizeFiles()
+                if (preferences.syncMetadataEnabled.first()) {
+                    applyMetadataSnapshot(metadataWriter.synchronize().snapshot)
+                }
+            }
                 .onSuccess { _state.update { it.copy(isSyncing = false, hasSynced = true) } }
                 .onFailure { error -> _state.update { it.copy(isSyncing = false, errorMessage = error.safeMessage()) } }
         }
@@ -106,8 +116,52 @@ class FileLibraryViewModel @Inject constructor(
 
     fun setFavorite(file: StoredFile, favorite: Boolean) {
         viewModelScope.launch {
-            runCatching { repository.setFavorite(file.stableId, favorite) }
-                .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            runCatching {
+                repository.setFavorite(file.stableId, favorite)
+                appendMetadata(MetadataOperation.FavoriteFile(file.stableId, favorite))
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+        }
+    }
+
+    fun createFolder(name: String, parentId: String? = null) {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                val now = System.currentTimeMillis() / 1000
+                val folder = Folder(UUID.randomUUID().toString(), cleanName, parentId, now, now)
+                repository.createFolder(folder)
+                appendMetadata(MetadataOperation.CreateFolder(folder.id, folder.name, folder.parentId))
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+        }
+    }
+
+    fun renameFolder(folder: Folder, name: String) {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                repository.renameFolder(folder.id, cleanName, System.currentTimeMillis() / 1000)
+                appendMetadata(MetadataOperation.RenameFolder(folder.id, cleanName))
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+        }
+    }
+
+    fun deleteFolder(folder: Folder) {
+        viewModelScope.launch {
+            runCatching {
+                repository.deleteFolder(folder.id)
+                appendMetadata(MetadataOperation.DeleteFolder(folder.id))
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+        }
+    }
+
+    fun moveFile(file: StoredFile, folderId: String?) {
+        viewModelScope.launch {
+            runCatching {
+                repository.setFolder(file.stableId, folderId)
+                appendMetadata(MetadataOperation.MoveFile(file.stableId, folderId))
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
         }
     }
 
@@ -139,6 +193,16 @@ class FileLibraryViewModel @Inject constructor(
                 repository.updateFile(file.copy(remoteAvailability = RemoteAvailability.DELETED, localAvailability = LocalAvailability.NOT_DOWNLOADED, localPath = null))
             }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
         }
+    }
+
+    private suspend fun appendMetadata(operation: MetadataOperation) {
+        if (preferences.syncMetadataEnabled.first()) metadataWriter.append(operation)
+    }
+
+    private suspend fun applyMetadataSnapshot(snapshot: com.teledrive.core.model.MetadataSnapshot) {
+        snapshot.folders.values.forEach { repository.upsertFolder(it) }
+        snapshot.fileFolderIds.forEach { (fileId, folderId) -> repository.setFolder(fileId, folderId) }
+        snapshot.favoriteFileIds.forEach { fileId -> repository.setFavorite(fileId, true) }
     }
 
     fun clearError() = _state.update { it.copy(errorMessage = null) }

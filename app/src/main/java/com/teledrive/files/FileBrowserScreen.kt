@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
+import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -82,6 +83,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.teledrive.core.model.FileKind
 import com.teledrive.core.model.FileSort
+import com.teledrive.core.model.Folder
 import com.teledrive.core.model.LocalAvailability
 import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.SortDirection
@@ -96,6 +98,8 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
     var selectedFile by remember { mutableStateOf<StoredFile?>(null) }
     var showFilterMenu by rememberSaveable { mutableStateOf(false) }
     var showSortMenu by rememberSaveable { mutableStateOf(false) }
+    var showCreateFolder by rememberSaveable { mutableStateOf(false) }
+    var newFolderName by rememberSaveable { mutableStateOf("") }
     var confirmRemoteDelete by remember { mutableStateOf<StoredFile?>(null) }
     var exportFile by remember { mutableStateOf<StoredFile?>(null) }
     val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { destination ->
@@ -144,8 +148,15 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
                 placeholder = { Text("Search your local index") },
                 shape = RoundedCornerShape(18.dp),
             )
-            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = state.query.kinds.isEmpty(), onClick = viewModel::clearKinds, label = { Text("All") })
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(selected = state.query.folderId == null, onClick = { viewModel.setFolder(null) }, label = { Text("All folders") })
+                state.folders.forEach { folder ->
+                    FilterChip(selected = state.query.folderId == folder.id, onClick = { viewModel.setFolder(folder.id) }, label = { Text(folder.name) })
+                }
+                AssistChip(onClick = { showCreateFolder = true }, label = { Text("New folder") }, leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, contentDescription = null) })
+            }
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = state.query.kinds.isEmpty(), onClick = viewModel::clearKinds, label = { Text("All types") })
                 listOf(FileKind.DOCUMENT, FileKind.IMAGE, FileKind.VIDEO, FileKind.AUDIO, FileKind.ARCHIVE).forEach { kind ->
                     FilterChip(selected = kind in state.query.kinds, onClick = { viewModel.toggleKind(kind) }, label = { Text(kind.label()) })
                 }
@@ -196,11 +207,39 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
         }
     }
 
+    if (showCreateFolder) {
+        AlertDialog(
+            onDismissRequest = { showCreateFolder = false },
+            title = { Text("Create virtual folder") },
+            text = {
+                OutlinedTextField(
+                    value = newFolderName,
+                    onValueChange = { newFolderName = it },
+                    singleLine = true,
+                    label = { Text("Folder name") },
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.createFolder(newFolderName)
+                        newFolderName = ""
+                        showCreateFolder = false
+                    },
+                    enabled = newFolderName.trim().isNotEmpty(),
+                ) { Text("Create") }
+            },
+            dismissButton = { TextButton(onClick = { showCreateFolder = false }) { Text("Cancel") } },
+        )
+    }
+
     selectedFile?.let { file ->
         FileDetailsDialog(
             file = file,
             onDismiss = { selectedFile = null },
+            folders = state.folders,
             onFavorite = { viewModel.setFavorite(file, !file.favorite); selectedFile = null },
+            onMove = { folderId -> viewModel.moveFile(file, folderId); selectedFile = null },
             onDownload = { viewModel.download(file); selectedFile = null },
             onExport = { exportFile = file; selectedFile = null; exportPicker.launch(file.originalFilename) },
             onRemoveLocal = { viewModel.deleteLocalCopy(file); selectedFile = null },
@@ -284,7 +323,8 @@ private fun FileKindIcon(kind: FileKind, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FileDetailsDialog(file: StoredFile, onDismiss: () -> Unit, onFavorite: () -> Unit, onDownload: () -> Unit, onExport: () -> Unit, onRemoveLocal: () -> Unit, onDeleteRemote: () -> Unit) {
+private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss: () -> Unit, onFavorite: () -> Unit, onMove: (String?) -> Unit, onDownload: () -> Unit, onExport: () -> Unit, onRemoveLocal: () -> Unit, onDeleteRemote: () -> Unit) {
+    var moveMenuExpanded by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(file.originalFilename) },
@@ -294,6 +334,15 @@ private fun FileDetailsDialog(file: StoredFile, onDismiss: () -> Unit, onFavorit
                 Text("Saved ${file.savedAtEpochSeconds.formatDate()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(if (file.localAvailability == LocalAvailability.AVAILABLE) "A local cached copy is available." else "No local cached copy.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Remote message: ${file.remote.value}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Box {
+                    TextButton(onClick = { moveMenuExpanded = true }) { Text("Move to folder") }
+                    DropdownMenu(expanded = moveMenuExpanded, onDismissRequest = { moveMenuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("No folder") }, onClick = { moveMenuExpanded = false; onMove(null) })
+                        folders.forEach { folder ->
+                            DropdownMenuItem(text = { Text(folder.name) }, onClick = { moveMenuExpanded = false; onMove(folder.id) })
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
