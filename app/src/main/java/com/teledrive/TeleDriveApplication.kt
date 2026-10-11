@@ -1,6 +1,7 @@
 package com.teledrive
 
 import android.app.Application
+import dagger.hilt.android.HiltAndroidApp
 
-/** Application entry point; dependency bindings are added with the feature slices. */
+@HiltAndroidApp
 class TeleDriveApplication : Application()
