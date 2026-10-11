@@ -64,7 +64,7 @@ class DownloadCoordinator @Inject constructor(
             updated
         } catch (error: Throwable) {
             val running = TransferStateMachine.reduce(queued, TransferEvent.Start)
-            repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Fail(error.message ?: "Download failed", retryable = true)))
+            repository.updateTransfer(TransferStateMachine.reduce(running, error.toTransferFailure(running.attempt)))
             workScheduler.enqueue()
             throw error
         }
@@ -75,7 +75,8 @@ class DownloadCoordinator @Inject constructor(
         val file = repository.observeFile(remote.value).first()
             ?: throw IOException("The file is no longer in the local index")
         val fileId = transfer.tdlibFileId ?: file.tdlibFileId ?: throw IOException("Telegram no longer exposes this file")
-        val running = TransferStateMachine.reduce(transfer, TransferEvent.Start)
+        val queued = TransferStateMachine.reduce(transfer, TransferEvent.Retry)
+        val running = TransferStateMachine.reduce(queued, TransferEvent.Start)
         repository.updateTransfer(running)
         try {
             val result = gateway.downloadFile(DownloadRequest(transfer.id, file.remote, fileId, file.sizeBytes))
@@ -84,7 +85,7 @@ class DownloadCoordinator @Inject constructor(
             repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Complete).copy(bytesTransferred = result.sizeBytes ?: file.sizeBytes ?: 0L))
             updated
         } catch (error: Throwable) {
-            repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Fail(error.message ?: "Download failed", retryable = true)))
+            repository.updateTransfer(TransferStateMachine.reduce(running, error.toTransferFailure(running.attempt)))
             workScheduler.enqueue()
             throw error
         }
