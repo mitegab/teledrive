@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [StoredFileEntity::class, FolderEntity::class, TransferEntity::class, SyncStateEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class TeleDriveDatabase : RoomDatabase() {
@@ -31,12 +31,26 @@ abstract class TeleDriveDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Generic media support. Purely additive (new nullable/defaulted columns): existing rows, folders, favorites
+         * and transfers are untouched. Rows keep mediaType UNKNOWN until the next sync refreshes them.
+         */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE stored_files ADD COLUMN mediaType TEXT NOT NULL DEFAULT 'UNKNOWN'")
+                db.execSQL("ALTER TABLE stored_files ADD COLUMN remoteUniqueId TEXT")
+                db.execSQL("ALTER TABLE stored_files ADD COLUMN thumbnailFileId INTEGER")
+                db.execSQL("ALTER TABLE stored_files ADD COLUMN durationSeconds INTEGER")
+                db.execSQL("ALTER TABLE stored_files ADD COLUMN localSizeBytes INTEGER")
+            }
+        }
+
         fun create(context: Context): TeleDriveDatabase = Room.databaseBuilder(
             context,
             TeleDriveDatabase::class.java,
             "teledrive.db",
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
     }

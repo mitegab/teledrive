@@ -2,6 +2,7 @@ package com.teledrive.core.database
 
 import com.teledrive.core.model.Folder
 import com.teledrive.core.model.LocalAvailability
+import com.teledrive.core.model.MediaType
 import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.RemoteMessageId
 import com.teledrive.core.model.StoredFile
@@ -23,6 +24,11 @@ fun StoredFileEntity.toDomain(): StoredFile = StoredFile(
     remoteAvailability = runCatching { RemoteAvailability.valueOf(remoteAvailability) }.getOrDefault(RemoteAvailability.UNKNOWN),
     localAvailability = runCatching { LocalAvailability.valueOf(localAvailability) }.getOrDefault(LocalAvailability.NOT_DOWNLOADED),
     localPath = localPath,
+    mediaType = runCatching { MediaType.valueOf(mediaType) }.getOrDefault(MediaType.UNKNOWN),
+    remoteUniqueId = remoteUniqueId,
+    thumbnailFileId = thumbnailFileId,
+    durationSeconds = durationSeconds,
+    localSizeBytes = localSizeBytes,
 )
 
 fun StoredFile.toEntity(existing: StoredFileEntity? = null): StoredFileEntity = StoredFileEntity(
@@ -43,6 +49,11 @@ fun StoredFile.toEntity(existing: StoredFileEntity? = null): StoredFileEntity = 
         runCatching { LocalAvailability.valueOf(existing.localAvailability) }.getOrDefault(localAvailability).name
     } else localAvailability.name,
     localPath = localPath ?: existing?.localPath,
+    mediaType = mediaType.takeIf { it != MediaType.UNKNOWN }?.name ?: existing?.mediaType ?: MediaType.UNKNOWN.name,
+    remoteUniqueId = remoteUniqueId ?: existing?.remoteUniqueId,
+    thumbnailFileId = thumbnailFileId ?: existing?.thumbnailFileId,
+    durationSeconds = durationSeconds ?: existing?.durationSeconds,
+    localSizeBytes = localSizeBytes ?: existing?.localSizeBytes,
 )
 
 fun FolderEntity.toDomain(): Folder = Folder(id, name, parentId, createdAtEpochSeconds, modifiedAtEpochSeconds)

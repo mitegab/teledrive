@@ -1,5 +1,6 @@
 package com.teledrive.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -23,6 +24,11 @@ data class StoredFileEntity(
     val remoteAvailability: String,
     val localAvailability: String,
     val localPath: String?,
+    @ColumnInfo(defaultValue = "UNKNOWN") val mediaType: String = "UNKNOWN",
+    val remoteUniqueId: String? = null,
+    val thumbnailFileId: Int? = null,
+    val durationSeconds: Int? = null,
+    val localSizeBytes: Long? = null,
 )
 
 @Entity(

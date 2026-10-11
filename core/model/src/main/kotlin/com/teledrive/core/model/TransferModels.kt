@@ -8,12 +8,26 @@ enum class TransferDirection {
     DOWNLOAD,
 }
 
+/**
+ * Lifecycle of an upload or download.
+ *
+ * Uploads:   QUEUED -> PREPARING -> RUNNING (uploading) -> FINALIZING (waiting for Telegram's confirmed message) -> COMPLETED
+ * Downloads: QUEUED -> PREPARING -> RUNNING (downloading) -> FINALIZING (verifying/publishing the local copy) -> COMPLETED
+ *
+ * FAILED and CANCELED are terminal until an explicit retry. Persisted as text; unknown values degrade to FAILED.
+ */
 enum class TransferState {
     QUEUED,
+    PREPARING,
     RUNNING,
+    FINALIZING,
     COMPLETED,
     FAILED,
     CANCELED,
+    ;
+
+    /** True while the transfer may still make progress and should be resumed or cancellable. */
+    val isActive: Boolean get() = this == QUEUED || this == PREPARING || this == RUNNING || this == FINALIZING
 }
 
 data class TransferId(val value: String)
@@ -49,7 +63,9 @@ data class TransferProgress(
 )
 
 sealed interface TransferEvent {
+    data object Prepare : TransferEvent
     data object Start : TransferEvent
+    data object Finalize : TransferEvent
     data class Progress(val bytes: Long, val totalBytes: Long?) : TransferEvent
     data object Complete : TransferEvent
     data class Fail(val message: String, val retryable: Boolean, val retryAtEpochSeconds: Long? = null) : TransferEvent
@@ -60,31 +76,40 @@ sealed interface TransferEvent {
 object TransferStateMachine {
     fun reduce(current: Transfer, event: TransferEvent): Transfer {
         return when (event) {
-            TransferEvent.Start -> if (current.state in setOf(TransferState.QUEUED, TransferState.FAILED)) {
+            TransferEvent.Prepare -> if (current.state in setOf(TransferState.QUEUED, TransferState.FAILED)) {
+                current.copy(state = TransferState.PREPARING, errorMessage = null, retryAtEpochSeconds = null)
+            } else current
+
+            TransferEvent.Start -> if (current.state in setOf(TransferState.QUEUED, TransferState.PREPARING, TransferState.FAILED)) {
                 current.copy(state = TransferState.RUNNING, errorMessage = null, retryAtEpochSeconds = null)
             } else current
 
-            is TransferEvent.Progress -> if (current.state == TransferState.RUNNING) {
+            TransferEvent.Finalize -> if (current.state in setOf(TransferState.PREPARING, TransferState.RUNNING)) {
+                current.copy(state = TransferState.FINALIZING, errorMessage = null, retryAtEpochSeconds = null)
+            } else current
+
+            is TransferEvent.Progress -> if (current.state == TransferState.RUNNING || current.state == TransferState.PREPARING) {
                 current.copy(
                     bytesTransferred = max(0, event.bytes),
                     totalBytes = event.totalBytes ?: current.totalBytes,
                 )
             } else current
 
-            TransferEvent.Complete -> current.copy(
+            // A late confirmation must not resurrect a transfer the user cancelled.
+            TransferEvent.Complete -> if (current.state == TransferState.CANCELED) current else current.copy(
                 state = TransferState.COMPLETED,
                 bytesTransferred = current.totalBytes ?: current.bytesTransferred,
                 errorMessage = null,
                 retryAtEpochSeconds = null,
             )
 
-            is TransferEvent.Fail -> current.copy(
+            is TransferEvent.Fail -> if (current.state == TransferState.CANCELED) current else current.copy(
                 state = TransferState.FAILED,
                 errorMessage = event.message,
                 retryAtEpochSeconds = event.retryAtEpochSeconds.takeIf { event.retryable },
             )
 
-            TransferEvent.Cancel -> if (current.state in setOf(TransferState.QUEUED, TransferState.RUNNING)) {
+            TransferEvent.Cancel -> if (current.state.isActive) {
                 current.copy(state = TransferState.CANCELED, errorMessage = null, retryAtEpochSeconds = null)
             } else current
 
