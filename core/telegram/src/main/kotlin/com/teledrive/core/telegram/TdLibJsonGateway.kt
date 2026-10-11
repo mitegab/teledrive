@@ -167,7 +167,14 @@ class TdLibJsonGateway(
     override suspend fun getSavedMessagesChat(): SavedMessagesChat {
         savedMessagesChat?.let { return it }
         val user = getCurrentUser()
-        val chat = request(JSONObject().put("@type", "getChat").put("chat_id", user.id))
+        // TDLib answers getChat with 404 "Chat not found" until the chat is known locally.
+        // Creating the private chat with ourselves registers Saved Messages in the local database.
+        val chat = request(
+            JSONObject()
+                .put("@type", "createPrivateChat")
+                .put("user_id", user.id)
+                .put("force", false),
+        )
         val chatType = chat.safeObject("type")
         val isCurrentUserChat = chatType?.type() == "chatTypePrivate" && chatType.optLong("user_id", 0L) == user.id
         if (!isCurrentUserChat) {
