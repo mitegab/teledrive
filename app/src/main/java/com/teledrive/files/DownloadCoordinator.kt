@@ -1,7 +1,9 @@
 package com.teledrive.files
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
 import com.teledrive.core.domain.DownloadRequest
 import com.teledrive.core.domain.FileIndexRepository
 import com.teledrive.core.domain.TelegramStorageGateway
@@ -68,6 +70,23 @@ class DownloadCoordinator @Inject constructor(
             workScheduler.enqueue()
             throw error
         }
+    }
+
+    fun launchLocalFile(file: StoredFile, share: Boolean) {
+        val path = file.localPath?.takeIf { File(it).isFile }
+            ?: throw IOException("The local cached file is no longer available")
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(path))
+        val mimeType = file.mimeType ?: "*/*"
+        val intent = if (share) {
+            Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uri)
+        } else {
+            Intent(Intent.ACTION_VIEW, uri)
+        }.apply {
+            type = mimeType
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = android.content.ClipData.newRawUri(file.originalFilename, uri)
+        }
+        context.startActivity(Intent.createChooser(intent, if (share) "Share ${file.originalFilename}" else "Open ${file.originalFilename}").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     suspend fun retry(transfer: Transfer): StoredFile = withContext(Dispatchers.IO) {

@@ -1,5 +1,6 @@
 package com.teledrive.files
 
+import android.graphics.BitmapFactory
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -58,6 +61,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.foundation.Image
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -68,12 +72,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -89,6 +96,9 @@ import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.SortDirection
 import com.teledrive.core.model.SortField
 import com.teledrive.core.model.StoredFile
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -96,6 +106,7 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var selectedFile by remember { mutableStateOf<StoredFile?>(null) }
+    var previewFile by remember { mutableStateOf<StoredFile?>(null) }
     var showFilterMenu by rememberSaveable { mutableStateOf(false) }
     var showSortMenu by rememberSaveable { mutableStateOf(false) }
     var showCreateFolder by rememberSaveable { mutableStateOf(false) }
@@ -240,11 +251,17 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
             folders = state.folders,
             onFavorite = { viewModel.setFavorite(file, !file.favorite); selectedFile = null },
             onMove = { folderId -> viewModel.moveFile(file, folderId); selectedFile = null },
+            onPreview = { previewFile = file; selectedFile = null },
+            onOpen = { viewModel.open(file); selectedFile = null },
+            onShare = { viewModel.open(file, share = true); selectedFile = null },
             onDownload = { viewModel.download(file); selectedFile = null },
             onExport = { exportFile = file; selectedFile = null; exportPicker.launch(file.originalFilename) },
             onRemoveLocal = { viewModel.deleteLocalCopy(file); selectedFile = null },
             onDeleteRemote = { confirmRemoteDelete = file; selectedFile = null },
         )
+    }
+    previewFile?.let { file ->
+        FilePreviewDialog(file = file, onDismiss = { previewFile = null })
     }
     confirmRemoteDelete?.let { file ->
         AlertDialog(
@@ -323,7 +340,42 @@ private fun FileKindIcon(kind: FileKind, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss: () -> Unit, onFavorite: () -> Unit, onMove: (String?) -> Unit, onDownload: () -> Unit, onExport: () -> Unit, onRemoveLocal: () -> Unit, onDeleteRemote: () -> Unit) {
+private fun FilePreviewDialog(file: StoredFile, onDismiss: () -> Unit) {
+    val path = file.localPath
+    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = null, key1 = path) {
+        value = withContext(Dispatchers.IO) {
+            path?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() }
+        }
+    }
+    val text by produceState<String?>(initialValue = null, key1 = path) {
+        value = if (file.mimeType?.startsWith("text/") == true && path != null) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    File(path).inputStream().use { input ->
+                        val buffer = ByteArray(200_000)
+                        val count = input.read(buffer)
+                        if (count <= 0) "" else buffer.copyOf(count).decodeToString()
+                    }
+                }.getOrNull()
+            }
+        } else null
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(file.originalFilename) },
+        text = {
+            when {
+                bitmap != null -> Image(bitmap = bitmap!!, contentDescription = file.originalFilename, modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp), contentScale = ContentScale.Fit)
+                text != null -> Text(text!!, modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()))
+                else -> Text("This file has no built-in preview. Use Open to choose a compatible Android app.")
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss: () -> Unit, onFavorite: () -> Unit, onMove: (String?) -> Unit, onPreview: () -> Unit, onOpen: () -> Unit, onShare: () -> Unit, onDownload: () -> Unit, onExport: () -> Unit, onRemoveLocal: () -> Unit, onDeleteRemote: () -> Unit) {
     var moveMenuExpanded by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -341,6 +393,13 @@ private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss
                         folders.forEach { folder ->
                             DropdownMenuItem(text = { Text(folder.name) }, onClick = { moveMenuExpanded = false; onMove(folder.id) })
                         }
+                    }
+                }
+                if (file.localAvailability == LocalAvailability.AVAILABLE) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (file.isPreviewable()) TextButton(onClick = onPreview) { Text("Preview") }
+                        TextButton(onClick = onOpen) { Text("Open") }
+                        TextButton(onClick = onShare) { Text("Share") }
                     }
                 }
             }
@@ -365,6 +424,7 @@ private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss
     )
 }
 
+private fun StoredFile.isPreviewable(): Boolean = kind == FileKind.IMAGE || mimeType?.startsWith("text/") == true
 private fun FileKind.label(): String = name.lowercase().replaceFirstChar { it.uppercase() }
 private fun SortField.label(): String = name.lowercase().replaceFirstChar { it.uppercase() }
 private fun Long?.formatBytes(): String = when {
