@@ -10,6 +10,15 @@ android {
     defaultConfig {
         minSdk = libs.versions.min.sdk.get().toInt()
     }
+
+    sourceSets {
+        // Exported Room schemas feed MigrationTestHelper in instrumented tests.
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 kotlin {
@@ -26,6 +35,7 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.kotlinx.coroutines.test)

@@ -1,0 +1,339 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "a933e1a55c245c00fcfc12017e6b0189",
+    "entities": [
+      {
+        "tableName": "stored_files",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`stableId` TEXT NOT NULL, `remoteChatId` INTEGER NOT NULL, `remoteMessageId` INTEGER NOT NULL, `tdlibFileId` INTEGER, `originalFilename` TEXT NOT NULL, `mimeType` TEXT, `sizeBytes` INTEGER, `savedAtEpochSeconds` INTEGER NOT NULL, `caption` TEXT, `folderId` TEXT, `favorite` INTEGER NOT NULL, `remoteAvailability` TEXT NOT NULL, `localAvailability` TEXT NOT NULL, `localPath` TEXT, PRIMARY KEY(`stableId`))",
+        "fields": [
+          {
+            "fieldPath": "stableId",
+            "columnName": "stableId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "remoteChatId",
+            "columnName": "remoteChatId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "remoteMessageId",
+            "columnName": "remoteMessageId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tdlibFileId",
+            "columnName": "tdlibFileId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "originalFilename",
+            "columnName": "originalFilename",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mimeType",
+            "columnName": "mimeType",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "sizeBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "savedAtEpochSeconds",
+            "columnName": "savedAtEpochSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "caption",
+            "columnName": "caption",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "folderId",
+            "columnName": "folderId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "favorite",
+            "columnName": "favorite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "remoteAvailability",
+            "columnName": "remoteAvailability",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localAvailability",
+            "columnName": "localAvailability",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localPath",
+            "columnName": "localPath",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "stableId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_stored_files_remoteChatId_remoteMessageId",
+            "unique": true,
+            "columnNames": [
+              "remoteChatId",
+              "remoteMessageId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_stored_files_remoteChatId_remoteMessageId` ON `${TABLE_NAME}` (`remoteChatId`, `remoteMessageId`)"
+          },
+          {
+            "name": "index_stored_files_originalFilename",
+            "unique": false,
+            "columnNames": [
+              "originalFilename"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stored_files_originalFilename` ON `${TABLE_NAME}` (`originalFilename`)"
+          },
+          {
+            "name": "index_stored_files_folderId",
+            "unique": false,
+            "columnNames": [
+              "folderId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stored_files_folderId` ON `${TABLE_NAME}` (`folderId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "folders",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `parentId` TEXT, `createdAtEpochSeconds` INTEGER NOT NULL, `modifiedAtEpochSeconds` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentId",
+            "columnName": "parentId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochSeconds",
+            "columnName": "createdAtEpochSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modifiedAtEpochSeconds",
+            "columnName": "modifiedAtEpochSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_folders_parentId",
+            "unique": false,
+            "columnNames": [
+              "parentId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_folders_parentId` ON `${TABLE_NAME}` (`parentId`)"
+          },
+          {
+            "name": "index_folders_parentId_name",
+            "unique": true,
+            "columnNames": [
+              "parentId",
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_folders_parentId_name` ON `${TABLE_NAME}` (`parentId`, `name`)"
+          }
+        ]
+      },
+      {
+        "tableName": "transfers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `direction` TEXT NOT NULL, `filename` TEXT NOT NULL, `sourcePath` TEXT, `remoteChatId` INTEGER, `remoteMessageId` INTEGER, `tdlibFileId` INTEGER, `bytesTransferred` INTEGER NOT NULL, `totalBytes` INTEGER, `state` TEXT NOT NULL, `errorMessage` TEXT, `attempt` INTEGER NOT NULL, `retryAtEpochSeconds` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "direction",
+            "columnName": "direction",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filename",
+            "columnName": "filename",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourcePath",
+            "columnName": "sourcePath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "remoteChatId",
+            "columnName": "remoteChatId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "remoteMessageId",
+            "columnName": "remoteMessageId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "tdlibFileId",
+            "columnName": "tdlibFileId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "bytesTransferred",
+            "columnName": "bytesTransferred",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalBytes",
+            "columnName": "totalBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "errorMessage",
+            "columnName": "errorMessage",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "attempt",
+            "columnName": "attempt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "retryAtEpochSeconds",
+            "columnName": "retryAtEpochSeconds",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transfers_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transfers_state` ON `${TABLE_NAME}` (`state`)"
+          },
+          {
+            "name": "index_transfers_direction",
+            "unique": false,
+            "columnNames": [
+              "direction"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transfers_direction` ON `${TABLE_NAME}` (`direction`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_state",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `lastHistoryMessageId` INTEGER NOT NULL, `lastSuccessfulSyncEpochSeconds` INTEGER, `metadataSchemaVersion` INTEGER NOT NULL, `lastMetadataMessageId` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastHistoryMessageId",
+            "columnName": "lastHistoryMessageId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastSuccessfulSyncEpochSeconds",
+            "columnName": "lastSuccessfulSyncEpochSeconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "metadataSchemaVersion",
+            "columnName": "metadataSchemaVersion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastMetadataMessageId",
+            "columnName": "lastMetadataMessageId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a933e1a55c245c00fcfc12017e6b0189')"
+    ]
+  }
+}
