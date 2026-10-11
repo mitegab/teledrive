@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 @Database(
     entities = [StoredFileEntity::class, FolderEntity::class, TransferEntity::class, SyncStateEntity::class],
     version = 3,
-    exportSchema = false,
+    exportSchema = true,
 )
 abstract class TeleDriveDatabase : RoomDatabase() {
     abstract fun storedFileDao(): StoredFileDao

@@ -92,7 +92,8 @@ object FileKindDetector {
     private val textExtensions = setOf("txt", "md", "csv", "json", "xml", "yaml", "yml", "log", "html", "htm")
 
     fun detect(filename: String?, mimeType: String?): FileKind {
-        val mime = mimeType.orEmpty().trim().lowercase()
+        // A generic declared type (application/octet-stream) must not hide what the extension says.
+        val mime = MimeTypes.resolve(mimeType, filename).takeUnless { it == MimeTypes.OCTET_STREAM }.orEmpty()
         val extension = filename.orEmpty().substringAfterLast('.', "").lowercase()
         return when {
             mime.startsWith("image/") -> FileKind.IMAGE
@@ -132,6 +133,33 @@ object FilenameRules {
         .substringAfterLast('.', "")
         .trim()
         .lowercase()
+
+    /**
+     * A name that is safe to create on a Linux/Android filesystem: no separators or control characters, at most
+     * [maxBytes] UTF-8 bytes (the filesystem limit is in bytes, not characters), extension preserved, never empty,
+     * never "." or "..".
+     */
+    fun fileSystemName(raw: String?, fallback: String = "file", maxBytes: Int = 200): String {
+        var name = sanitize(raw, fallback).trim('.', ' ').ifEmpty { fallback }
+        if (name.toByteArray(Charsets.UTF_8).size <= maxBytes) return name
+        val extension = extension(name).takeIf { it.isNotEmpty() && it.length <= 12 }?.let { ".$it" }.orEmpty()
+        val stem = name.removeSuffix(extension)
+        val budget = (maxBytes - extension.toByteArray(Charsets.UTF_8).size).coerceAtLeast(1)
+        val truncated = StringBuilder()
+        var used = 0
+        var index = 0
+        while (index < stem.length) {
+            val codePoint = stem.codePointAt(index)
+            val chars = Character.toChars(codePoint)
+            val size = String(chars).toByteArray(Charsets.UTF_8).size
+            if (used + size > budget) break
+            truncated.append(chars)
+            used += size
+            index += chars.size
+        }
+        name = truncated.toString().trimEnd('.', ' ').ifEmpty { fallback } + extension
+        return name
+    }
 
     fun displayName(filename: String?, mimeType: String?): String = sanitize(
         filename,
