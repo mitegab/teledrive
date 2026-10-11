@@ -27,6 +27,8 @@ The implementation and its deterministic regression coverage are captured in the
 - `b2b7cc8` (`fix(sync): reconcile permanent remote deletions`) handles TDLib deletion updates without removing local managed bytes.
 - `127a82a` (`fix(sync): reconcile stale remote index entries`) reconciles absence only after a completed full history scan.
 - `ac4b127` (`test(transfer): cover cancellation failure policy`) adds JVM coverage for cancellation and retry policy.
+- `e7a6750` (`fix(transfer): preserve recovery on lifecycle cancellation`) keeps generic coroutine/WorkManager stops recoverable while the explicit UI cancellation path alone commits `CANCELED`.
+- `a8b0146` (`fix(build): repair TDLib helper shell syntax`) makes the native-build helper parse correctly and fail truthfully at the missing-SDK prerequisite.
 
 The targeted review and deterministic checks continue on the same branch.
 
