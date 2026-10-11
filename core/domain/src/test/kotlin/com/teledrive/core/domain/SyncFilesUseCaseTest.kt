@@ -41,6 +41,7 @@ class SyncFilesUseCaseTest {
         assertTrue(summary.complete)
         assertEquals(listOf(10L, 20L, 0L), repository.savedCursors)
         assertEquals(listOf("42:11", "42:21"), repository.files.map(StoredFile::stableId))
+        assertEquals(setOf("42:11", "42:21"), repository.reconciledRemoteIds)
     }
 
     @Test
@@ -74,6 +75,7 @@ class SyncFilesUseCaseTest {
 private class FakeRepository : FileIndexRepository {
     val files = mutableListOf<StoredFile>()
     val savedCursors = mutableListOf<Long>()
+    val reconciledRemoteIds = mutableSetOf<String>()
     var cursor = HistoryCursor()
     private val fileFlow = MutableStateFlow<List<StoredFile>>(emptyList())
 
@@ -101,6 +103,9 @@ private class FakeRepository : FileIndexRepository {
     }
 
     override suspend fun updateFile(file: StoredFile) = Unit
+    override suspend fun reconcileRemoteFiles(seenRemoteIds: Set<String>) {
+        reconciledRemoteIds += seenRemoteIds
+    }
     override suspend fun deleteLocalFile(remoteId: String) = Unit
     override suspend fun setFolder(remoteId: String, folderId: String?) = Unit
     override suspend fun setFavorite(remoteId: String, favorite: Boolean) = Unit

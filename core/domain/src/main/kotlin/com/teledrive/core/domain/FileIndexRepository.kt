@@ -19,6 +19,8 @@ interface FileIndexRepository {
     suspend fun saveHistoryCursor(cursor: com.teledrive.core.model.HistoryCursor)
     suspend fun updateFile(file: StoredFile)
     suspend fun markRemoteDeleted(remote: RemoteMessageId) {}
+    /** Marks indexed remote files absent from a completed full history scan as deleted. */
+    suspend fun reconcileRemoteFiles(seenRemoteIds: Set<String>) {}
     suspend fun deleteLocalFile(remoteId: String)
     suspend fun setFolder(remoteId: String, folderId: String?)
     suspend fun setFavorite(remoteId: String, favorite: Boolean)
