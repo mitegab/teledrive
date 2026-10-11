@@ -26,7 +26,7 @@ class MetadataSyncTest {
     fun mapperCanBeUsedWithGatewayWithoutAndroid() = kotlinx.coroutines.test.runTest {
         val gateway = FakeGateway()
         val sync = MetadataSyncUseCase(gateway)
-        val result = sync.mergeMessages(listOf("ordinary", "bad" + "\u2063TELEDRIVE_METADATA_V1:"))
+        val result = sync.mergeMessages(listOf("ordinary", "\u2063TELEDRIVE_METADATA_V1:bad"))
         assertEquals(0, result.validRecords)
         assertEquals(1, result.ignoredMessages)
         assertEquals(1, result.malformedRecords)

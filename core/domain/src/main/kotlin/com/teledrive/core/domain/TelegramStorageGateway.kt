@@ -13,6 +13,7 @@ import com.teledrive.core.model.TransferId
 import com.teledrive.core.model.TransferProgress
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 
 /**
  * The only boundary the rest of the app uses for Telegram. Implementations may be real TDLib or a test fake.
@@ -20,6 +21,9 @@ import kotlinx.coroutines.flow.StateFlow
 interface TelegramStorageGateway {
     val authorizationState: StateFlow<AuthorizationState>
     val transferUpdates: Flow<TransferProgress>
+    /** Permanent remote message deletions observed by TDLib; cache-only removals are not emitted. */
+    val remoteMessageDeletions: Flow<RemoteMessageId>
+        get() = emptyFlow()
 
     suspend fun start()
     suspend fun submitPhoneNumber(phoneNumber: String)

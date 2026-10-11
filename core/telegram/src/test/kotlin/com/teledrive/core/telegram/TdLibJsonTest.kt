@@ -3,6 +3,7 @@ package com.teledrive.core.telegram
 import org.json.JSONArray
 import org.json.JSONObject
 import com.teledrive.core.model.LocalAvailability
+import com.teledrive.core.model.RemoteMessageId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -59,6 +60,23 @@ class TdLibJsonTest {
     fun suppliesUsefulExtensionsWhenTelegramOmitsDocumentName() {
         val mapped = message(7, documentContent("", "application/pdf", 9)).toStoredFile(42)
         assertEquals("Telegram-file-7.pdf", mapped?.originalFilename)
+    }
+
+    @Test
+    fun emitsOnlyPermanentRemoteDeletions() {
+        val update = JSONObject()
+            .put("@type", "updateDeleteMessages")
+            .put("chat_id", 42)
+            .put("message_ids", JSONArray().put(9).put(10))
+            .put("is_permanent", true)
+        val cacheOnly = JSONObject()
+            .put("@type", "updateDeleteMessages")
+            .put("chat_id", 42)
+            .put("message_ids", JSONArray().put(11))
+            .put("is_permanent", false)
+
+        assertEquals(listOf(RemoteMessageId(42, 9), RemoteMessageId(42, 10)), update.permanentDeletedMessages())
+        assertEquals(emptyList(), cacheOnly.permanentDeletedMessages())
     }
 
     @Test

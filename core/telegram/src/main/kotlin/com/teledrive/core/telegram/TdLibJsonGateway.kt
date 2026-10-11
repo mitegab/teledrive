@@ -69,6 +69,7 @@ class TdLibJsonGateway(
     private val appContext = context.applicationContext
     private val _authorizationState = MutableStateFlow<AuthorizationState>(AuthorizationState.Uninitialized)
     private val _transferUpdates = MutableSharedFlow<TransferProgress>(extraBufferCapacity = 128)
+    private val _remoteMessageDeletions = MutableSharedFlow<RemoteMessageId>(extraBufferCapacity = 128)
     private val requestCounter = AtomicLong(0)
     private val pendingRequests = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
     private val uploadWaiters = ConcurrentHashMap<String, CompletableDeferred<StoredFile>>()
@@ -85,6 +86,7 @@ class TdLibJsonGateway(
 
     override val authorizationState: StateFlow<AuthorizationState> = _authorizationState.asStateFlow()
     override val transferUpdates: Flow<TransferProgress> = _transferUpdates.asSharedFlow()
+    override val remoteMessageDeletions: Flow<RemoteMessageId> = _remoteMessageDeletions.asSharedFlow()
 
     override suspend fun start() {
         if (receiverJob?.isActive == true) return
@@ -463,8 +465,12 @@ class TdLibJsonGateway(
             "updateMessageContent" -> handleMessageContent(json)
             "updateMessageSendSucceeded" -> handleMessageSendSucceeded(json)
             "updateMessageSendFailed" -> handleMessageSendFailed(json)
-            "updateDeleteMessages" -> Unit // Room reconciliation is driven by the next page; no user data is logged here.
+            "updateDeleteMessages" -> handleDeleteMessages(json)
         }
+    }
+
+    private fun handleDeleteMessages(update: JSONObject) {
+        update.permanentDeletedMessages().forEach(_remoteMessageDeletions::tryEmit)
     }
 
     private fun handleAuthorizationState(state: JSONObject?) {

@@ -3,6 +3,7 @@ package com.teledrive.core.domain
 import com.teledrive.core.model.FileQuery
 import com.teledrive.core.model.FileSort
 import com.teledrive.core.model.Folder
+import com.teledrive.core.model.RemoteMessageId
 import com.teledrive.core.model.StoredFile
 import com.teledrive.core.model.Transfer
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,7 @@ interface FileIndexRepository {
     suspend fun getHistoryCursor(): com.teledrive.core.model.HistoryCursor
     suspend fun saveHistoryCursor(cursor: com.teledrive.core.model.HistoryCursor)
     suspend fun updateFile(file: StoredFile)
+    suspend fun markRemoteDeleted(remote: RemoteMessageId) {}
     suspend fun deleteLocalFile(remoteId: String)
     suspend fun setFolder(remoteId: String, folderId: String?)
     suspend fun setFavorite(remoteId: String, favorite: Boolean)

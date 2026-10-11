@@ -66,6 +66,28 @@ class RoomFileIndexRepositoryTest {
     }
 
     @Test
+    fun remoteDeletionMarksOnlyRemoteAvailabilityAndKeepsLocalCopy() = runBlocking {
+        val file = StoredFile(
+            RemoteMessageId(1, 4),
+            5,
+            "offline.pdf",
+            "application/pdf",
+            8,
+            1,
+            remoteAvailability = RemoteAvailability.AVAILABLE,
+            localAvailability = LocalAvailability.AVAILABLE,
+            localPath = "/managed/offline.pdf",
+        )
+        repository.upsertFiles(listOf(file))
+        repository.markRemoteDeleted(file.remote)
+
+        val actual = repository.observeFile(file.stableId).first()
+        assertEquals(RemoteAvailability.DELETED, actual?.remoteAvailability)
+        assertEquals(LocalAvailability.AVAILABLE, actual?.localAvailability)
+        assertEquals("/managed/offline.pdf", actual?.localPath)
+    }
+
+    @Test
     fun deletingLocalCopyDoesNotRemoveRemoteIndex() = runBlocking {
         val file = StoredFile(RemoteMessageId(1, 2), 3, "a.txt", "text/plain", 1, 1, remoteAvailability = RemoteAvailability.AVAILABLE, localAvailability = LocalAvailability.AVAILABLE, localPath = "/tmp/a.txt")
         repository.upsertFiles(listOf(file))
