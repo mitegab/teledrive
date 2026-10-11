@@ -55,6 +55,9 @@ class RoomFileIndexRepository(
         files.upsert(file.toEntity(existing))
     }
 
+    override suspend fun markRemoteDeleted(remote: com.teledrive.core.model.RemoteMessageId) =
+        files.setRemoteAvailability(remote.value, com.teledrive.core.model.RemoteAvailability.DELETED.name)
+
     override suspend fun deleteLocalFile(remoteId: String) = files.clearLocalCopy(remoteId)
 
     override suspend fun setFolder(remoteId: String, folderId: String?) = files.setFolder(remoteId, folderId)

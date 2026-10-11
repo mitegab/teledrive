@@ -86,6 +86,9 @@ class FileLibraryViewModel @Inject constructor(
                 }
             }
         }
+        viewModelScope.launch {
+            gateway.remoteMessageDeletions.collect { remote -> repository.markRemoteDeleted(remote) }
+        }
     }
 
     fun synchronize() {

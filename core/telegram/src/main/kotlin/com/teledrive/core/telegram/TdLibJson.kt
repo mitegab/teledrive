@@ -139,6 +139,17 @@ internal fun JSONObject.extractMimeType(): String? {
 
 internal fun JSONObject.extractCaption(): String? = safeObject("caption")?.optString("text")?.takeIf { it.isNotBlank() }
 
+internal fun JSONObject.permanentDeletedMessages(): List<RemoteMessageId> {
+    if (!optBoolean("is_permanent", false)) return emptyList()
+    val chatId = optLong("chat_id", 0L).takeIf { it > 0L } ?: return emptyList()
+    val messageIds = safeArray("message_ids") ?: return emptyList()
+    return buildList {
+        for (index in 0 until messageIds.length()) {
+            messageIds.optLong(index, 0L).takeIf { it > 0L }?.let { add(RemoteMessageId(chatId, it)) }
+        }
+    }
+}
+
 internal fun JSONObject.toStoredFile(savedChatId: Long): StoredFile? {
     val messageId = optLong("id", 0L).takeIf { it > 0L } ?: return null
     val content = safeObject("content") ?: return null

@@ -94,7 +94,7 @@ The app never exposes a private filesystem path directly to another app. A manag
 
 ### 7. Deleted, unavailable, and protected files
 
-`updateDeleteMessages` contains `chat_id`, message IDs, and whether deletion is permanent or cache-only. The adapter does not silently turn a missing TDLib cache path into an app-managed file. A `file.local.can_be_downloaded = false`, protected content, a missing remote file, or a TDLib `Error` is surfaced as unavailable; it is not shown as a successful local copy. Removing an app-managed local copy only removes that file and clears its Room fields; it never calls `deleteMessages`.
+`updateDeleteMessages` contains `chat_id`, message IDs, and whether deletion is permanent or cache-only. The adapter emits only permanent deletions to the index layer; cache-only removals do not mark a remote message deleted. Room marks a matching record `DELETED` while retaining any verified app-managed local copy. The adapter does not silently turn a missing TDLib cache path into an app-managed file. A `file.local.can_be_downloaded = false`, protected content, a missing remote file, or a TDLib `Error` is surfaced as unavailable; it is not shown as a successful local copy. Removing an app-managed local copy only removes that file and clears its Room fields; it never calls `deleteMessages`.
 
 Remote deletion is an explicit, confirmed action. It calls `deleteMessages(chat_id, [message_id], revoke)` only after confirmation and uses the message properties/available deletion semantics returned by TDLib. The user is told that the message is part of their actual Saved Messages. If a local app-managed copy exists, it remains available until the user separately removes it, so remote and local deletion cannot be confused.
 
