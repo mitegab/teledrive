@@ -47,7 +47,10 @@ class DownloadCoordinator @Inject constructor(
     suspend fun download(file: StoredFile): StoredFile {
         val deferred = activeDownloads.computeIfAbsent(file.stableId) {
             val candidate = transferScope.async { executeDownload(file) }
-            candidate.invokeOnCompletion { activeDownloads.remove(file.stableId, candidate) }
+            candidate.invokeOnCompletion {
+                activeDownloads.remove(file.stableId, candidate)
+                explicitCancellations.remove(file.stableId)
+            }
             candidate
         }
         return deferred.await()
