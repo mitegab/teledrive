@@ -14,6 +14,7 @@ import com.teledrive.core.model.TransferEvent
 import com.teledrive.core.model.TransferId
 import com.teledrive.core.model.TransferState
 import com.teledrive.core.model.TransferStateMachine
+import com.teledrive.transfers.TransferWorkScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -26,6 +27,7 @@ class UploadCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val gateway: TelegramStorageGateway,
     private val repository: FileIndexRepository,
+    private val workScheduler: TransferWorkScheduler,
 ) {
     suspend fun upload(uri: Uri): StoredFile = withContext(Dispatchers.IO) {
         val staged = stage(uri)
@@ -34,12 +36,15 @@ class UploadCoordinator @Inject constructor(
             id = transferId,
             direction = TransferDirection.UPLOAD,
             filename = staged.displayName,
+            sourcePath = staged.file.absolutePath,
             totalBytes = staged.sizeBytes,
             state = TransferState.QUEUED,
         )
         repository.upsertTransfer(queued)
+        var completed = false
         try {
             repository.updateTransfer(TransferStateMachine.reduce(queued, TransferEvent.Start))
+            workScheduler.enqueue()
             val result = gateway.uploadDocument(
                 UploadRequest(
                     transferId = transferId,
@@ -54,17 +59,53 @@ class UploadCoordinator @Inject constructor(
                 TransferStateMachine.reduce(
                     TransferStateMachine.reduce(queued, TransferEvent.Start),
                     TransferEvent.Complete,
-                ).copy(remote = result.file.remote, tdlibFileId = result.file.tdlibFileId),
+                ).copy(remote = result.file.remote, tdlibFileId = result.file.tdlibFileId, sourcePath = null),
             )
+            completed = true
             result.file
         } catch (error: Throwable) {
             val running = TransferStateMachine.reduce(queued, TransferEvent.Start)
             repository.updateTransfer(
                 TransferStateMachine.reduce(running, TransferEvent.Fail(error.message ?: "Upload failed", retryable = true)),
             )
+            workScheduler.enqueue()
             throw error
         } finally {
-            staged.file.delete()
+            if (completed) staged.file.delete()
+        }
+    }
+
+    suspend fun discardStagedSource(transfer: Transfer) = withContext(Dispatchers.IO) {
+        transfer.sourcePath?.let { File(it).delete() }
+        repository.updateTransfer(transfer.copy(sourcePath = null))
+    }
+
+    suspend fun retry(transfer: Transfer): StoredFile = withContext(Dispatchers.IO) {
+        val sourcePath = transfer.sourcePath?.takeIf { File(it).isFile }
+            ?: throw IOException("The staged upload file is no longer available; choose the file again")
+        val running = TransferStateMachine.reduce(transfer, TransferEvent.Start)
+        repository.updateTransfer(running)
+        try {
+            val result = gateway.uploadDocument(
+                UploadRequest(
+                    transferId = transfer.id,
+                    localPath = sourcePath,
+                    displayName = transfer.filename,
+                    mimeType = null,
+                    sizeBytes = transfer.totalBytes,
+                ),
+            )
+            repository.upsertFiles(listOf(result.file))
+            repository.updateTransfer(
+                TransferStateMachine.reduce(running, TransferEvent.Complete)
+                    .copy(remote = result.file.remote, tdlibFileId = result.file.tdlibFileId, sourcePath = null),
+            )
+            File(sourcePath).delete()
+            result.file
+        } catch (error: Throwable) {
+            repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Fail(error.message ?: "Upload failed", retryable = true)))
+            workScheduler.enqueue()
+            throw error
         }
     }
 

@@ -22,6 +22,7 @@ data class Transfer(
     val id: TransferId,
     val direction: TransferDirection,
     val filename: String,
+    val sourcePath: String? = null,
     val remote: RemoteMessageId? = null,
     val tdlibFileId: Int? = null,
     val bytesTransferred: Long = 0,

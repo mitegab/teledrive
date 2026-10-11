@@ -45,6 +45,7 @@ data class TransferEntity(
     @PrimaryKey val id: String,
     val direction: String,
     val filename: String,
+    val sourcePath: String?,
     val remoteChatId: Long?,
     val remoteMessageId: Long?,
     val tdlibFileId: Int?,

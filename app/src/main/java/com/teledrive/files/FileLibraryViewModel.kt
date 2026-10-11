@@ -181,7 +181,7 @@ class FileLibraryViewModel @Inject constructor(
 
     fun deleteLocalCopy(file: StoredFile) {
         viewModelScope.launch {
-            runCatching { repository.deleteLocalFile(file.stableId) }
+            runCatching { downloadCoordinator.removeLocalCopy(file) }
                 .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
         }
     }

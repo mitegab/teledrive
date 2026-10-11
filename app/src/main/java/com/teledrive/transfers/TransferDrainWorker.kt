@@ -1,0 +1,49 @@
+package com.teledrive.transfers
+
+import android.content.Context
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
+import com.teledrive.core.domain.FileIndexRepository
+import com.teledrive.core.domain.TelegramStorageGateway
+import com.teledrive.core.model.TransferState
+import com.teledrive.files.DownloadCoordinator
+import com.teledrive.files.UploadCoordinator
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.android.InstallIn
+import dagger.hilt.components.SingletonComponent
+import dagger.hilt.EntryPoint
+import kotlinx.coroutines.flow.first
+
+/** Resumes persisted, retryable work when Android grants a network window. */
+class TransferDrainWorker(
+    appContext: Context,
+    workerParams: WorkerParameters,
+) : CoroutineWorker(appContext, workerParams) {
+    override suspend fun doWork(): Result {
+        val dependencies = EntryPointAccessors.fromApplication(
+            applicationContext,
+            TransferWorkerEntryPoint::class.java,
+        )
+        runCatching { dependencies.gateway.start() }.getOrElse { return Result.retry() }
+        val transfers = dependencies.repository.observeTransfers().first()
+        var failed = false
+        transfers.filter { it.state == TransferState.QUEUED || it.state == TransferState.FAILED }.forEach { transfer ->
+            val retryable = transfer.direction != com.teledrive.core.model.TransferDirection.UPLOAD || !transfer.sourcePath.isNullOrBlank()
+            if (!retryable) return@forEach
+            runCatching {
+                if (transfer.direction == com.teledrive.core.model.TransferDirection.UPLOAD) dependencies.uploadCoordinator.retry(transfer)
+                else dependencies.downloadCoordinator.retry(transfer)
+            }.onFailure { failed = true }
+        }
+        return if (failed) Result.retry() else Result.success()
+    }
+}
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface TransferWorkerEntryPoint {
+    val gateway: TelegramStorageGateway
+    val repository: FileIndexRepository
+    val uploadCoordinator: UploadCoordinator
+    val downloadCoordinator: DownloadCoordinator
+}

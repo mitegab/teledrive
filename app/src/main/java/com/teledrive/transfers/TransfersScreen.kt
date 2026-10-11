@@ -52,14 +52,14 @@ fun TransfersScreen(viewModel: TransferViewModel = hiltViewModel()) {
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(state.transfers, key = { it.id.value }) { transfer -> TransferRow(transfer, viewModel::cancel) }
+                items(state.transfers, key = { it.id.value }) { transfer -> TransferRow(transfer, viewModel::cancel, viewModel::retry) }
             }
         }
     }
 }
 
 @Composable
-private fun TransferRow(transfer: Transfer, onCancel: (Transfer) -> Unit) {
+private fun TransferRow(transfer: Transfer, onCancel: (Transfer) -> Unit, onRetry: (Transfer) -> Unit) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f))) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -76,7 +76,12 @@ private fun TransferRow(transfer: Transfer, onCancel: (Transfer) -> Unit) {
                 LinearProgressIndicator(progress = { transfer.progress ?: 0f }, modifier = Modifier.fillMaxWidth())
                 Text("${transfer.bytesTransferred.formatBytes()} of ${transfer.totalBytes.formatBytes()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (transfer.state == TransferState.FAILED && transfer.errorMessage != null) Text(transfer.errorMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (transfer.state == TransferState.FAILED) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (transfer.errorMessage != null) Text(transfer.errorMessage, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    IconButton(onClick = { onRetry(transfer) }) { Icon(Icons.Rounded.Refresh, contentDescription = "Retry transfer") }
+                }
+            }
         }
     }
 }
