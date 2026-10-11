@@ -44,6 +44,9 @@ interface FolderDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(folder: FolderEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(folder: FolderEntity)
+
     @Query("UPDATE folders SET name = :name, modifiedAtEpochSeconds = :modifiedAt WHERE id = :id")
     suspend fun rename(id: String, name: String, modifiedAt: Long)
 

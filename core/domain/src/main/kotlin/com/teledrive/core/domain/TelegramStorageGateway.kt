@@ -3,6 +3,7 @@ package com.teledrive.core.domain
 import com.teledrive.core.model.AuthorizationState
 import com.teledrive.core.model.FilesPage
 import com.teledrive.core.model.HistoryCursor
+import com.teledrive.core.model.MetadataMessagesPage
 import com.teledrive.core.model.RemoteMessageId
 import com.teledrive.core.model.SavedMessagesChat
 import com.teledrive.core.model.StoredFile
@@ -32,6 +33,7 @@ interface TelegramStorageGateway {
     suspend fun getCurrentUser(): TelegramUser
     suspend fun getSavedMessagesChat(): SavedMessagesChat
     suspend fun getFilesPage(cursor: HistoryCursor, limit: Int = 100): FilesPage
+    suspend fun getMetadataMessagesPage(cursor: HistoryCursor, limit: Int = 100): MetadataMessagesPage
 
     suspend fun uploadDocument(request: UploadRequest): UploadResult
     suspend fun downloadFile(request: DownloadRequest): DownloadResult

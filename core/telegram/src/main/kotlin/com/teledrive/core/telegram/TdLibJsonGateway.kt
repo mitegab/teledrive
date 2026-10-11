@@ -13,6 +13,7 @@ import com.teledrive.core.model.AuthorizationState
 import com.teledrive.core.model.FilesPage
 import com.teledrive.core.model.HistoryCursor
 import com.teledrive.core.model.LocalAvailability
+import com.teledrive.core.model.MetadataMessagesPage
 import com.teledrive.core.model.MetadataRecordCodec
 import com.teledrive.core.model.RemoteMessageId
 import com.teledrive.core.model.SavedMessagesChat
@@ -209,6 +210,33 @@ class TdLibJsonGateway(
         val nextCursor = oldestMessageId?.takeIf { it > 0 && (cursor.fromMessageId == 0L || it < cursor.fromMessageId) }
             ?.let(::HistoryCursor)
         return FilesPage(files = files, nextCursor = nextCursor, approximateTotalCount = null)
+    }
+
+    override suspend fun getMetadataMessagesPage(cursor: HistoryCursor, limit: Int): MetadataMessagesPage {
+        val chat = getSavedMessagesChat()
+        val messages = request(
+            JSONObject()
+                .put("@type", "getChatHistory")
+                .put("chat_id", chat.chatId)
+                .put("from_message_id", cursor.fromMessageId)
+                .put("offset", 0)
+                .put("limit", limit.coerceIn(1, 100))
+                .put("only_local", false),
+        ).safeArray("messages") ?: JSONArray()
+        val records = buildList {
+            for (index in 0 until messages.length()) {
+                val message = messages.optJSONObject(index) ?: continue
+                val content = message.safeObject("content") ?: continue
+                if (content.type() != "messageText") continue
+                val text = content.safeObject("text")?.optString("text") ?: continue
+                if (text.startsWith(MetadataRecordCodec.PREFIX)) add(text)
+            }
+        }
+        val oldest = (0 until messages.length())
+            .mapNotNull { messages.optJSONObject(it)?.optLong("id", 0L)?.takeIf { id -> id > 0 } }
+            .minOrNull()
+        val next = oldest?.takeIf { it > 0 && (cursor.fromMessageId == 0L || it < cursor.fromMessageId) }?.let(::HistoryCursor)
+        return MetadataMessagesPage(records, next)
     }
 
     override suspend fun uploadDocument(request: UploadRequest): UploadResult {

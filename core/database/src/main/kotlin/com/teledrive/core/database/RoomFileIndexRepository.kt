@@ -50,6 +50,8 @@ class RoomFileIndexRepository(
 
     override suspend fun createFolder(folder: Folder) = folders.insert(folder.toEntity())
 
+    override suspend fun upsertFolder(folder: Folder) = folders.upsert(folder.toEntity())
+
     override suspend fun renameFolder(folderId: String, name: String, modifiedAtEpochSeconds: Long) =
         folders.rename(folderId, name, modifiedAtEpochSeconds)
 

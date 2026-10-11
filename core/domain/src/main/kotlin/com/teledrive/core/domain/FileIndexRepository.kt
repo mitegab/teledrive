@@ -20,6 +20,7 @@ interface FileIndexRepository {
     suspend fun setFavorite(remoteId: String, favorite: Boolean)
 
     suspend fun createFolder(folder: Folder)
+    suspend fun upsertFolder(folder: Folder)
     suspend fun renameFolder(folderId: String, name: String, modifiedAtEpochSeconds: Long)
     suspend fun deleteFolder(folderId: String)
     suspend fun moveFolder(folderId: String, parentId: String?, modifiedAtEpochSeconds: Long)

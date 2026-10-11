@@ -10,6 +10,7 @@ import com.teledrive.core.model.AuthorizationState
 import com.teledrive.core.model.FileKindDetector
 import com.teledrive.core.model.FilesPage
 import com.teledrive.core.model.HistoryCursor
+import com.teledrive.core.model.MetadataMessagesPage
 import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.RemoteMessageId
 import com.teledrive.core.model.SavedMessagesChat
@@ -70,6 +71,11 @@ class FakeTelegramStorageGateway(
         val page = values.filter { cursor.fromMessageId == 0L || it.remote.messageId < cursor.fromMessageId }.take(limit)
         val next = page.lastOrNull()?.remote?.messageId?.let(::HistoryCursor)
         return FilesPage(page, next)
+    }
+
+    override suspend fun getMetadataMessagesPage(cursor: HistoryCursor, limit: Int): MetadataMessagesPage {
+        val page = metadata.asReversed().take(limit)
+        return MetadataMessagesPage(page, null)
     }
 
     override suspend fun uploadDocument(request: UploadRequest): UploadResult {
