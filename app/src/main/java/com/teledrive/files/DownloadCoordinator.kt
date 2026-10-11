@@ -42,6 +42,7 @@ class DownloadCoordinator @Inject constructor(
 ) {
     private val transferScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeDownloads = ConcurrentHashMap<String, Deferred<StoredFile>>()
+    private val explicitCancellations = ConcurrentHashMap.newKeySet<String>()
 
     suspend fun download(file: StoredFile): StoredFile {
         val deferred = activeDownloads.computeIfAbsent(file.stableId) {
@@ -91,10 +92,11 @@ class DownloadCoordinator @Inject constructor(
             )
             updated
         } catch (cancelled: CancellationException) {
-            withContext(NonCancellable) {
-                runCatching { gateway.cancelTransfer(transferId, TransferDirection.DOWNLOAD, fileId) }
-                repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Cancel))
+            if (explicitCancellations.remove(file.stableId)) {
+                withContext(NonCancellable) { runCatching { gateway.cancelTransfer(transferId, TransferDirection.DOWNLOAD, fileId) } }
             }
+            // A worker/lifecycle stop leaves the persisted RUNNING row recoverable. The explicit
+            // UI cancellation path settles it after this job has joined.
             throw cancelled
         } catch (error: Throwable) {
             val failure = error.toTransferFailure(running.attempt)
@@ -107,7 +109,12 @@ class DownloadCoordinator @Inject constructor(
     }
 
     fun cancel(remoteId: String?) {
-        remoteId?.let { activeDownloads[it]?.cancel(CancellationException("Transfer cancelled by user")) }
+        remoteId?.let { stableId ->
+            activeDownloads[stableId]?.takeUnless { it.isCompleted }?.let { deferred ->
+                explicitCancellations += stableId
+                deferred.cancel(CancellationException("Transfer cancelled by user"))
+            }
+        }
     }
 
     fun launchLocalFile(file: StoredFile, share: Boolean) = fileOpenRouter.open(file, share)
@@ -130,10 +137,6 @@ class DownloadCoordinator @Inject constructor(
             repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Complete).copy(bytesTransferred = result.sizeBytes ?: file.sizeBytes ?: 0L))
             updated
         } catch (cancelled: CancellationException) {
-            withContext(NonCancellable) {
-                runCatching { gateway.cancelTransfer(transfer.id, TransferDirection.DOWNLOAD, fileId) }
-                repository.updateTransfer(TransferStateMachine.reduce(running, TransferEvent.Cancel))
-            }
             throw cancelled
         } catch (error: Throwable) {
             val failure = error.toTransferFailure(running.attempt)
