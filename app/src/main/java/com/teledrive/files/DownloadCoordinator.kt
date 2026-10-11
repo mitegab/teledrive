@@ -15,6 +15,7 @@ import com.teledrive.core.model.TransferEvent
 import com.teledrive.core.model.TransferId
 import com.teledrive.core.model.TransferState
 import com.teledrive.core.model.TransferStateMachine
+import com.teledrive.transfers.ActiveTransferRegistry
 import com.teledrive.transfers.TransferWorkScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -30,6 +31,7 @@ class DownloadCoordinator @Inject constructor(
     private val gateway: TelegramStorageGateway,
     private val repository: FileIndexRepository,
     private val workScheduler: TransferWorkScheduler,
+    private val activeTransfers: ActiveTransferRegistry,
 ) {
     suspend fun download(file: StoredFile): StoredFile = withContext(Dispatchers.IO) {
         if (file.localAvailability == LocalAvailability.AVAILABLE && !file.localPath.isNullOrBlank()) return@withContext file
@@ -46,6 +48,7 @@ class DownloadCoordinator @Inject constructor(
         repository.upsertTransfer(queued)
         try {
             repository.updateTransfer(TransferStateMachine.reduce(queued, TransferEvent.Start))
+            activeTransfers.markActive(transferId.value)
             workScheduler.enqueue()
             val result = gateway.downloadFile(
                 DownloadRequest(
@@ -69,6 +72,8 @@ class DownloadCoordinator @Inject constructor(
             repository.updateTransfer(TransferStateMachine.reduce(running, error.toTransferFailure(running.attempt)))
             workScheduler.enqueue()
             throw error
+        } finally {
+            activeTransfers.clear(transferId.value)
         }
     }
 
@@ -97,6 +102,7 @@ class DownloadCoordinator @Inject constructor(
         val queued = TransferStateMachine.reduce(transfer, TransferEvent.Retry)
         val running = TransferStateMachine.reduce(queued, TransferEvent.Start)
         repository.updateTransfer(running)
+        activeTransfers.markActive(transfer.id.value)
         try {
             val result = gateway.downloadFile(DownloadRequest(transfer.id, file.remote, fileId, file.sizeBytes))
             val updated = file.copy(localAvailability = LocalAvailability.AVAILABLE, localPath = result.localPath)
@@ -107,6 +113,8 @@ class DownloadCoordinator @Inject constructor(
             repository.updateTransfer(TransferStateMachine.reduce(running, error.toTransferFailure(running.attempt)))
             workScheduler.enqueue()
             throw error
+        } finally {
+            activeTransfers.clear(transfer.id.value)
         }
     }
 

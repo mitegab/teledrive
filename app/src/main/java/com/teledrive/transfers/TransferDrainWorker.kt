@@ -12,6 +12,7 @@ import com.teledrive.files.UploadCoordinator
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.InstallIn
 import dagger.hilt.components.SingletonComponent
+import java.io.File
 import dagger.hilt.EntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
@@ -38,9 +39,14 @@ class TransferDrainWorker(
         transfers.filter { transfer ->
             val retryAt = transfer.retryAtEpochSeconds
             transfer.state == TransferState.QUEUED ||
+                transfer.state == TransferState.RUNNING ||
                 (transfer.state == TransferState.FAILED && retryAt != null && retryAt <= now)
         }.forEach { transfer ->
-            val retryable = transfer.direction != com.teledrive.core.model.TransferDirection.UPLOAD || !transfer.sourcePath.isNullOrBlank()
+            if (transfer.state == TransferState.RUNNING && dependencies.activeTransfers.isActive(transfer.id.value)) {
+                failed = true
+                return@forEach
+            }
+            val retryable = transfer.direction != com.teledrive.core.model.TransferDirection.UPLOAD || transfer.sourcePath?.let { File(it).isFile } == true
             if (!retryable) {
                 dependencies.repository.updateTransfer(transfer.copy(state = TransferState.FAILED, errorMessage = "The staged upload file is no longer available", retryAtEpochSeconds = null))
                 return@forEach
@@ -59,6 +65,7 @@ class TransferDrainWorker(
 interface TransferWorkerEntryPoint {
     val gateway: TelegramStorageGateway
     val repository: FileIndexRepository
+    val activeTransfers: ActiveTransferRegistry
     val uploadCoordinator: UploadCoordinator
     val downloadCoordinator: DownloadCoordinator
 }
