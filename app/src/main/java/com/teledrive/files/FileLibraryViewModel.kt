@@ -16,21 +16,15 @@ import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.SortDirection
 import com.teledrive.core.model.SortField
 import com.teledrive.core.model.StoredFile
-import com.teledrive.core.model.Transfer
-import com.teledrive.core.model.TransferDirection
-import com.teledrive.core.model.TransferId
 import com.teledrive.core.model.TransferProgress
-import com.teledrive.core.model.TransferState
 import com.teledrive.preferences.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -53,6 +47,7 @@ class FileLibraryViewModel @Inject constructor(
     private val repository: FileIndexRepository,
     private val gateway: TelegramStorageGateway,
     private val uploadCoordinator: UploadCoordinator,
+    private val downloadCoordinator: DownloadCoordinator,
     private val preferences: PreferencesRepository,
 ) : ViewModel() {
     private val query = MutableStateFlow(FileQuery())
@@ -112,6 +107,20 @@ class FileLibraryViewModel @Inject constructor(
     fun setFavorite(file: StoredFile, favorite: Boolean) {
         viewModelScope.launch {
             runCatching { repository.setFavorite(file.stableId, favorite) }
+                .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+        }
+    }
+
+    fun download(file: StoredFile) {
+        viewModelScope.launch {
+            runCatching { downloadCoordinator.download(file) }
+                .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+        }
+    }
+
+    fun export(localPath: String, destination: android.net.Uri) {
+        viewModelScope.launch {
+            runCatching { downloadCoordinator.export(localPath, destination) }
                 .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
         }
     }

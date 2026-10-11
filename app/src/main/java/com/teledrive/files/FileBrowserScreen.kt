@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.AudioFile
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Favorite
@@ -62,6 +63,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -95,6 +97,13 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
     var showFilterMenu by rememberSaveable { mutableStateOf(false) }
     var showSortMenu by rememberSaveable { mutableStateOf(false) }
     var confirmRemoteDelete by remember { mutableStateOf<StoredFile?>(null) }
+    var exportFile by remember { mutableStateOf<StoredFile?>(null) }
+    val exportPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { destination ->
+        val file = exportFile
+        val path = file?.localPath
+        if (destination != null && path != null) viewModel.export(path, destination)
+        exportFile = null
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         uris.forEach { uri ->
             runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -192,6 +201,8 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
             file = file,
             onDismiss = { selectedFile = null },
             onFavorite = { viewModel.setFavorite(file, !file.favorite); selectedFile = null },
+            onDownload = { viewModel.download(file); selectedFile = null },
+            onExport = { exportFile = file; selectedFile = null; exportPicker.launch(file.originalFilename) },
             onRemoveLocal = { viewModel.deleteLocalCopy(file); selectedFile = null },
             onDeleteRemote = { confirmRemoteDelete = file; selectedFile = null },
         )
@@ -273,7 +284,7 @@ private fun FileKindIcon(kind: FileKind, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FileDetailsDialog(file: StoredFile, onDismiss: () -> Unit, onFavorite: () -> Unit, onRemoveLocal: () -> Unit, onDeleteRemote: () -> Unit) {
+private fun FileDetailsDialog(file: StoredFile, onDismiss: () -> Unit, onFavorite: () -> Unit, onDownload: () -> Unit, onExport: () -> Unit, onRemoveLocal: () -> Unit, onDeleteRemote: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(file.originalFilename) },
@@ -285,11 +296,21 @@ private fun FileDetailsDialog(file: StoredFile, onDismiss: () -> Unit, onFavorit
                 Text("Remote message: ${file.remote.value}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { Button(onClick = onFavorite) { Text(if (file.favorite) "Unfavorite" else "Favorite") } },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(onClick = onFavorite) { Text(if (file.favorite) "Unfavorite" else "Favorite") }
+                if (file.localAvailability == LocalAvailability.AVAILABLE) {
+                    Button(onClick = onExport) { Icon(Icons.Rounded.CloudUpload, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Export") }
+                } else {
+                    Button(onClick = onDownload) { Icon(Icons.Rounded.CloudDownload, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Download") }
+                }
+            }
+        },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (file.localAvailability == LocalAvailability.AVAILABLE) IconButton(onClick = onRemoveLocal) { Icon(Icons.Rounded.Description, contentDescription = "Remove local copy") }
                 IconButton(onClick = onDeleteRemote) { Icon(Icons.Rounded.Archive, contentDescription = "Delete remote message") }
+                TextButton(onClick = onDismiss) { Text("Close") }
             }
         },
     )
