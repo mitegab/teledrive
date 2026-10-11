@@ -19,6 +19,7 @@ tools/.tdlib-source/
 core/telegram/src/main/tdlib/jniLibs/*
 !core/telegram/src/main/tdlib/jniLibs/.gitkeep
 core/telegram/src/main/tdlib/generated/
+core/testing/build/
 
 # Local TDLib databases, staged files, exports and test fixtures
 **/tdlib-data/
