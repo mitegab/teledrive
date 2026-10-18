@@ -11,7 +11,7 @@ import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.LocalFileStorage
 import com.teledrive.files.UploadCoordinator
 import dagger.hilt.android.EntryPointAccessors
-import dagger.hilt.android.InstallIn
+import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.hilt.EntryPoint
 import kotlinx.coroutines.flow.first

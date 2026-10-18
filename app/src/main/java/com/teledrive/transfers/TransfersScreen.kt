@@ -78,7 +78,7 @@ private fun TransferRow(transfer: Transfer, onCancel: (Transfer) -> Unit, onRetr
             }
             if (transfer.state == TransferState.FAILED) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (transfer.errorMessage != null) Text(transfer.errorMessage, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    if (transfer.errorMessage != null) Text(transfer.errorMessage!!, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     IconButton(onClick = { onRetry(transfer) }) { Icon(Icons.Rounded.Refresh, contentDescription = "Retry transfer") }
                 }
             }
