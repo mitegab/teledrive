@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.kapt)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -16,9 +15,9 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:domain"))
-    implementation(libs.androidx.room.runtime)
+    api(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    kapt(libs.androidx.room.compiler)
+    ksp(libs.androidx.room.compiler)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)
@@ -28,6 +27,3 @@ dependencies {
     androidTestImplementation(libs.kotlinx.coroutines.test)
 }
 
-kapt {
-    correctErrorTypes = true
-}
