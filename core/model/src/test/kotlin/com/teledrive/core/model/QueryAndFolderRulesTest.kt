@@ -13,11 +13,13 @@ class QueryAndFolderRulesTest {
 
     @Test
     fun searchesCaptionNameAndKind() {
+        
         assertEquals(3, files.queryFiles(FileQuery(text = "ሰነድ")).single().remote.messageId)
     }
 
     @Test
     fun filtersFavoritesAndType() {
+        
         val result = files.queryFiles(FileQuery(kinds = setOf(FileKind.TEXT), favoritesOnly = false))
         assertEquals(listOf(3L), result.map { it.remote.messageId })
         assertEquals(listOf(1L), files.queryFiles(FileQuery(favoritesOnly = true)).map { it.remote.messageId })
