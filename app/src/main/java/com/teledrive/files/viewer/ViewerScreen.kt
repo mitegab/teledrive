@@ -29,9 +29,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -71,21 +71,31 @@ fun ViewerScreen(stableId: String, imageIds: List<String> = emptyList(), onBack:
             IconButton(onClick = onBack) { Icon(Icons.Rounded.Close, "Back", tint = Color.White) }
             Text(state.file?.originalFilename ?: "Viewer", Modifier.weight(1f), color = Color.White, maxLines = 1)
         }
+        val file = state.file
         when {
             state.loading -> Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 if (state.progress != null) LinearProgressIndicator(progress = { state.progress ?: 0f },  modifier = Modifier.fillMaxWidth(.72f)) else CircularProgressIndicator(color = Color.White)
                 Spacer(Modifier.height(12.dp)); Text(if (state.totalBytes != null) "Downloaded ${state.transferredBytes} of ${state.totalBytes} bytes" else "Downloading for offline viewing…", color = Color.White)
                 TextButton(onClick = viewModel::cancelDownload) { Text("Cancel") }
             }
-            state.file == null -> ViewerFailure(state.error ?: "File unavailable", viewModel::openExternal, { exportPicker.launch("file") })
-            state.error != null -> ViewerFailure(state.error!!, viewModel::openExternal, { exportPicker.launch(state.file!!.originalFilename) })
-            state.file!!.kind == FileKind.IMAGE -> HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
+            file == null -> ViewerFailure(state.error ?: "File unavailable", viewModel::openExternal, { exportPicker.launch("file") })
+            state.error != null -> ViewerFailure(state.error!!, viewModel::openExternal, { exportPicker.launch(file.originalFilename) })
+            file.kind == FileKind.IMAGE -> HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
                 val current = state.file
-                if (pages.getOrNull(page) == current?.stableId && current.localPath != null) ImageViewer(current.localPath!!, current.originalFilename, viewModel::openExternal, { exportPicker.launch(current.originalFilename) })
-                else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color.White) }
+                val path = current?.localPath
+                if (current != null && pages.getOrNull(page) == current.stableId && path != null) {
+                    ImageViewer(path, current.originalFilename, viewModel::openExternal, { exportPicker.launch(current.originalFilename) })
+                } else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color.White) }
             }
-            state.file!!.kind == FileKind.VIDEO || state.file!!.kind == FileKind.AUDIO -> MediaViewer(state.file!!.localPath!!, state.file!!.kind == FileKind.VIDEO, state.file!!.originalFilename, viewModel::openExternal, { exportPicker.launch(state.file!!.originalFilename) })
-            else -> ViewerFailure("No built-in viewer is available for this file type.", viewModel::openExternal, { exportPicker.launch(state.file!!.originalFilename) })
+            file.kind == FileKind.VIDEO || file.kind == FileKind.AUDIO -> {
+                val path = file.localPath
+                if (path != null) {
+                    MediaViewer(path, file.kind == FileKind.VIDEO, file.originalFilename, viewModel::openExternal, { exportPicker.launch(file.originalFilename) })
+                } else {
+                    ViewerFailure("File path is unavailable.", viewModel::openExternal, { exportPicker.launch(file.originalFilename) })
+                }
+            }
+            else -> ViewerFailure("No built-in viewer is available for this file type.", viewModel::openExternal, { exportPicker.launch(file.originalFilename) })
         }
     }
 }
