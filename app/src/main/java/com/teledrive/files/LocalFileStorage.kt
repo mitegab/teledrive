@@ -3,6 +3,7 @@ package com.teledrive.files
 import android.content.Context
 import android.net.Uri
 import com.teledrive.core.model.FilenameRules
+import com.teledrive.core.model.UploadStagingRules
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileOutputStream
@@ -63,19 +64,18 @@ class LocalFileStorage @Inject constructor(
         managedFile(path)?.takeIf(File::isFile)?.delete()
     }
 
-    fun isStagedSource(path: String?): Boolean = stagedFile(path)?.isFile == true
+    fun isStagedSource(path: String?): Boolean = UploadStagingRules.isStagedSource(stagingDirectory, path)
 
     suspend fun removeStagedSource(path: String?) = withContext(Dispatchers.IO) {
-        stagedFile(path)?.takeIf(File::isFile)?.delete()
+        UploadStagingRules.removeStagedSource(stagingDirectory, path)
     }
 
     suspend fun cleanupTemporaryFiles(maxAgeMillis: Long = 24 * 60 * 60 * 1000L) = withContext(Dispatchers.IO) {
         val cutoff = System.currentTimeMillis() - maxAgeMillis
-        sequenceOf(downloadsDirectory, stagingDirectory).forEach { root ->
-            root.walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".part") && it.lastModified() < cutoff }
-                .forEach(File::delete)
-        }
+        downloadsDirectory.walkTopDown()
+            .filter { it.isFile && it.name.endsWith(".part") && it.lastModified() < cutoff }
+            .forEach(File::delete)
+        UploadStagingRules.cleanup(stagingDirectory, cutoff)
     }
 
     suspend fun storageUsageBytes(): Long = withContext(Dispatchers.IO) {
@@ -109,15 +109,6 @@ class LocalFileStorage @Inject constructor(
         val root = runCatching { downloadsDirectory.canonicalFile }.getOrNull() ?: return null
         val file = runCatching { File(path).canonicalFile }.getOrNull() ?: return null
         return file.takeIf { it.path == root.path || it.path.startsWith(root.path + File.separator) }
-    }
-
-    private fun stagedFile(path: String?): File? {
-        if (path.isNullOrBlank()) return null
-        val root = runCatching { stagingDirectory.canonicalFile }.getOrNull() ?: return null
-        val file = runCatching { File(path).canonicalFile }.getOrNull() ?: return null
-        return file.takeIf {
-            it.isFile && it.name.endsWith(".part") && it.path.startsWith(root.path + File.separator)
-        }
     }
 
     private fun stableDirectory(stableId: String): String = MessageDigest.getInstance("SHA-256")
