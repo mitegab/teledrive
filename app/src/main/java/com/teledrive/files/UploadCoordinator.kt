@@ -12,6 +12,7 @@ import com.teledrive.core.model.Transfer
 import com.teledrive.core.model.TransferDirection
 import com.teledrive.core.model.TransferEvent
 import com.teledrive.core.model.TransferId
+import com.teledrive.core.model.UploadStagingRules
 import com.teledrive.core.model.TransferState
 import com.teledrive.core.model.TransferStateMachine
 import com.teledrive.transfers.ActiveTransferRegistry
@@ -192,7 +193,9 @@ class UploadCoordinator @Inject constructor(
         } ?: (null to null)
         val safeName = FilenameRules.displayName(displayName.first, resolver.getType(uri))
         val directory = context.filesDir.resolve("staging").apply { mkdirs() }
-        val output = File.createTempFile("upload-", ".part", directory)
+        // Stage as staging/<uuid>/<safeName> so TDLib derives the real document
+        // name and extension from the input path instead of "upload-*.part".
+        val output = UploadStagingRules.createStagedTarget(directory, safeName)
         try {
             resolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(output).use { out ->
@@ -205,7 +208,7 @@ class UploadCoordinator @Inject constructor(
                 throw IOException("The selected content changed while it was being staged")
             }
         } catch (error: Throwable) {
-            output.delete()
+            UploadStagingRules.removeStagedSource(directory, output.absolutePath)
             throw error
         }
         return StagedUpload(
