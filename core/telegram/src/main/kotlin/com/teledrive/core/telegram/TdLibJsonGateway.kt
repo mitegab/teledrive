@@ -22,6 +22,7 @@ import com.teledrive.core.model.TelegramUser
 import com.teledrive.core.model.TransferDirection
 import com.teledrive.core.model.TransferId
 import com.teledrive.core.model.TransferProgress
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.core.model.TransferState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -81,8 +82,11 @@ class TdLibJsonGateway(
     private val transferTotals = ConcurrentHashMap<String, Long?>()
     private var clientId: Int? = null
     private var receiverJob: Job? = null
-    private var tdlibParametersSent = false
-    private var savedMessagesChat: SavedMessagesChat? = null
+    private val tdlibParametersGate = TdLibParametersGate()
+    private val chatResolver = SavedMessagesChatResolver(
+        send = { request(it) },
+        currentUser = { getCurrentUser() },
+    )
 
     override val authorizationState: StateFlow<AuthorizationState> = _authorizationState.asStateFlow()
     override val transferUpdates: Flow<TransferProgress> = _transferUpdates.asSharedFlow()
@@ -108,51 +112,49 @@ class TdLibJsonGateway(
         }
         receiverJob = scope.launch(Dispatchers.IO) { receiveLoop() }
         // TDLib starts delivering updates after the first request. This request is harmless and carries no user data.
-        sendRaw(JSONObject().put("@type", "getOption").put("name", "version"), newClientId)
+        sendRaw(TdLibRequests.getOption("version"), newClientId)
     }
 
     override suspend fun submitPhoneNumber(phoneNumber: String) {
         require(phoneNumber.trim().length >= 5) { "Enter the phone number in international format" }
-        command(
-            JSONObject()
-                .put("@type", "setAuthenticationPhoneNumber")
-                .put("phone_number", phoneNumber.trim())
-                .put("settings", JSONObject.NULL),
-        )
+        command(TdLibRequests.setAuthenticationPhoneNumber(phoneNumber.trim()))
     }
 
     override suspend fun submitCode(code: String) {
         require(code.trim().isNotEmpty()) { "Enter the authentication code" }
-        command(JSONObject().put("@type", "checkAuthenticationCode").put("code", code.trim()))
+        command(TdLibRequests.checkAuthenticationCode(code.trim()))
     }
 
     override suspend fun submitPassword(password: String) {
         require(password.isNotEmpty()) { "Enter the two-step verification password" }
-        command(JSONObject().put("@type", "checkAuthenticationPassword").put("password", password))
+        command(TdLibRequests.checkAuthenticationPassword(password))
     }
 
     override suspend fun submitEmailAddress(emailAddress: String) {
         require(emailAddress.trim().contains('@')) { "Enter a valid email address" }
-        command(JSONObject().put("@type", "setAuthenticationEmailAddress").put("email_address", emailAddress.trim()))
+        command(TdLibRequests.setAuthenticationEmailAddress(emailAddress.trim()))
     }
 
     override suspend fun submitEmailCode(code: String) {
         require(code.trim().isNotEmpty()) { "Enter the email verification code" }
-        command(JSONObject().put("@type", "checkAuthenticationEmailCode").put("code", code.trim()))
+        command(TdLibRequests.checkAuthenticationEmailCode(code.trim()))
     }
 
     override suspend fun cancelAuthorization() {
-        runCatching { command(JSONObject().put("@type", "logOut")) }
+        runCatching { command(TdLibRequests.logOut()) }
             .onFailure { _authorizationState.value = AuthorizationState.Error(message = "Unable to cancel Telegram authorization") }
     }
 
     override suspend fun logOut() {
-        command(JSONObject().put("@type", "logOut"))
-        savedMessagesChat = null
+        command(TdLibRequests.logOut())
+        chatResolver.invalidate()
+        // A later session in this process may need to send parameters again.
+        tdlibParametersGate.markUnsent()
     }
 
     override suspend fun getCurrentUser(): TelegramUser {
-        val user = request(JSONObject().put("@type", "getMe"))
+        awaitReadySession(_authorizationState)
+        val user = request(TdLibRequests.getMe())
         val id = user.optLong("id", 0L).takeIf { it > 0 } ?: throw StorageGatewayException(
             code = "INVALID_USER",
             message = "Telegram did not return a current user",
@@ -170,35 +172,16 @@ class TdLibJsonGateway(
     }
 
     override suspend fun getSavedMessagesChat(): SavedMessagesChat {
-        savedMessagesChat?.let { return it }
-        val user = getCurrentUser()
-        val chat = request(JSONObject().put("@type", "getChat").put("chat_id", user.id))
-        val chatType = chat.safeObject("type")
-        val isCurrentUserChat = chatType?.type() == "chatTypePrivate" && chatType.optLong("user_id", 0L) == user.id
-        if (!isCurrentUserChat) {
-            throw StorageGatewayException(
-                code = "SAVED_MESSAGES_NOT_FOUND",
-                message = "The authenticated Telegram account did not expose its Saved Messages chat",
-                retryable = false,
-            )
-        }
-        return SavedMessagesChat(
-            chatId = chat.optLong("id", user.id),
-            title = chat.optString("title").ifBlank { "Saved Messages" },
-        ).also { savedMessagesChat = it }
+        awaitReadySession(_authorizationState)
+        return chatResolver.resolve()
     }
 
     override suspend fun getFilesPage(cursor: HistoryCursor, limit: Int): FilesPage {
-        val chat = getSavedMessagesChat()
-        val messages = request(
-            JSONObject()
-                .put("@type", "getChatHistory")
-                .put("chat_id", chat.chatId)
-                .put("from_message_id", cursor.fromMessageId)
-                .put("offset", 0)
-                .put("limit", limit.coerceIn(1, 100))
-                .put("only_local", false),
-        ).safeArray("messages") ?: JSONArray()
+        awaitReadySession(_authorizationState)
+        val messages = chatResolver.withChat { chat ->
+            request(TdLibRequests.getChatHistory(chat.chatId, cursor.fromMessageId, offset = 0, limit = limit.coerceIn(1, 100), onlyLocal = false))
+        }.safeArray("messages") ?: JSONArray()
+        val savedChatId = chatResolver.cached()?.chatId ?: 0L
 
         val files = buildList {
             for (index in 0 until messages.length()) {
@@ -207,7 +190,7 @@ class TdLibJsonGateway(
                 val text = if (content?.type() == "messageText") content.safeObject("text")?.optString("text") else null
                 // Reserved TeleDrive metadata is an internal event, never a user file.
                 if (MetadataRecordCodec.decode(text) != com.teledrive.core.model.MetadataDecodeResult.NotMetadata) continue
-                message.toStoredFile(chat.chatId)?.let(::add)
+                message.toStoredFile(savedChatId)?.let(::add)
             }
         }
         val oldestMessageId = (0 until messages.length())
@@ -215,20 +198,19 @@ class TdLibJsonGateway(
             .minOrNull()
         val nextCursor = oldestMessageId?.takeIf { it > 0 && (cursor.fromMessageId == 0L || it < cursor.fromMessageId) }
             ?.let(::HistoryCursor)
-        return FilesPage(files = files, nextCursor = nextCursor, approximateTotalCount = null)
+        return FilesPage(
+            files = files,
+            nextCursor = nextCursor,
+            approximateTotalCount = null,
+            messageCount = messages.length(),
+        )
     }
 
     override suspend fun getMetadataMessagesPage(cursor: HistoryCursor, limit: Int): MetadataMessagesPage {
-        val chat = getSavedMessagesChat()
-        val messages = request(
-            JSONObject()
-                .put("@type", "getChatHistory")
-                .put("chat_id", chat.chatId)
-                .put("from_message_id", cursor.fromMessageId)
-                .put("offset", 0)
-                .put("limit", limit.coerceIn(1, 100))
-                .put("only_local", false),
-        ).safeArray("messages") ?: JSONArray()
+        awaitReadySession(_authorizationState)
+        val messages = chatResolver.withChat { chat ->
+            request(TdLibRequests.getChatHistory(chat.chatId, cursor.fromMessageId, offset = 0, limit = limit.coerceIn(1, 100), onlyLocal = false))
+        }.safeArray("messages") ?: JSONArray()
         val records = buildList {
             for (index in 0 until messages.length()) {
                 val message = messages.optJSONObject(index) ?: continue
@@ -246,30 +228,32 @@ class TdLibJsonGateway(
     }
 
     override suspend fun uploadDocument(request: UploadRequest): UploadResult {
-        val chat = getSavedMessagesChat()
+        awaitReadySession(_authorizationState)
+        TeleDriveLog.d(
+            "upload.start",
+            "transfer_id" to request.transferId.value,
+            "file_name" to request.displayName,
+            "size" to request.sizeBytes,
+        )
+        val chat = chatResolver.resolve()
         transferDirections[request.transferId.value] = TransferDirection.UPLOAD
         transferTotals[request.transferId.value] = request.sizeBytes
         emitTransfer(request.transferId, 0L, request.sizeBytes, TransferState.RUNNING)
         val waiter = CompletableDeferred<StoredFile>()
         uploadWaiters[request.transferId.value] = waiter
-        uploadMessageTracker.register(request.transferId, chat.chatId)
         try {
-            val message = request(
-                JSONObject()
-                    .put("@type", "sendMessage")
-                    .put("chat_id", chat.chatId)
-                    .put("topic_id", JSONObject.NULL)
-                    .put("reply_to", JSONObject.NULL)
-                    .put("options", JSONObject.NULL)
-                    .put("reply_markup", JSONObject.NULL)
-                    .put("input_message_content", inputMessageDocument(request.localPath)),
-            )
+            var usedChatId = chat.chatId
+            val message = chatResolver.withChat { savedChat ->
+                usedChatId = savedChat.chatId
+                uploadMessageTracker.register(request.transferId, savedChat.chatId)
+                request(TdLibRequests.sendMessage(savedChat.chatId, TdLibRequests.inputMessageDocument(request.localPath)))
+            }
+            uploadMessageTracker.bind(request.transferId, message.optLong("id", 0L).takeIf { it > 0L })
             val messageId = message.optLong("id", 0L).takeIf { it > 0L }
             messageId?.let {
-                uploadMessageTracker.bind(request.transferId, it)
-                transferByMessageId[MessageKey(chat.chatId, it)] = request.transferId
+                transferByMessageId[MessageKey(usedChatId, it)] = request.transferId
             }
-            val initial = message.toStoredFile(chat.chatId)
+            val initial = message.toStoredFile(usedChatId)
             initial?.tdlibFileId?.let { transferByFileId[it] = request.transferId }
             // The send response can be a provisional message or can omit usable content. In both cases,
             // keep the persisted transfer alive until a later message update supplies the final media.
@@ -279,12 +263,14 @@ class TdLibJsonGateway(
                 return UploadResult(request.transferId, initial)
             }
             val finalFile = withTimeout(30.minutes) { waiter.await() }
+            TeleDriveLog.d("upload.done", "transfer_id" to request.transferId.value, "message_id" to finalFile.remote.messageId)
             emitTransfer(request.transferId, finalFile.sizeBytes ?: request.sizeBytes ?: 0L, finalFile.sizeBytes ?: request.sizeBytes, TransferState.COMPLETED, finalFile.remote, finalFile.tdlibFileId)
             return UploadResult(request.transferId, finalFile)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
             val mapped = error.asStorageException()
+            TeleDriveLog.d("upload.failed", "transfer_id" to request.transferId.value, "error_code" to mapped.code, "error" to mapped.message)
             emitTransfer(request.transferId, 0L, request.sizeBytes, TransferState.FAILED, errorMessage = mapped.message)
             throw mapped
         } finally {
@@ -298,6 +284,7 @@ class TdLibJsonGateway(
     }
 
     override suspend fun downloadFile(request: DownloadRequest): DownloadResult {
+        awaitReadySession(_authorizationState)
         if (downloadWaiters.containsKey(request.tdlibFileId)) {
             throw StorageGatewayException("TRANSFER_ALREADY_ACTIVE", "This file is already downloading", false)
         }
@@ -308,15 +295,7 @@ class TdLibJsonGateway(
         transferByFileId[request.tdlibFileId] = request.transferId
         emitTransfer(request.transferId, 0L, request.expectedSizeBytes, TransferState.RUNNING, request.remote, request.tdlibFileId)
         try {
-            val file = request(
-                JSONObject()
-                    .put("@type", "downloadFile")
-                    .put("file_id", request.tdlibFileId)
-                    .put("priority", 32)
-                    .put("offset", 0)
-                    .put("limit", 0)
-                    .put("synchronous", false),
-            )
+            val file = request(TdLibRequests.downloadFile(request.tdlibFileId, priority = 32, offset = 0, limit = 0, synchronous = false))
             if (file.completedDownload()) {
                 val path = file.safeObject("local")?.optString("path")?.takeIf { it.isNotBlank() }
                     ?: throw StorageGatewayException("DOWNLOAD_PATH_MISSING", "Telegram completed the download without a local path", false)
@@ -342,11 +321,12 @@ class TdLibJsonGateway(
     }
 
     override suspend fun cancelTransfer(transferId: TransferId, direction: TransferDirection, tdlibFileId: Int?) {
+        awaitReadySession(_authorizationState)
         when (direction) {
             TransferDirection.DOWNLOAD -> {
                 val fileId = tdlibFileId ?: transferByFileId.entries.firstOrNull { it.value == transferId }?.key
                 if (fileId != null) {
-                    request(JSONObject().put("@type", "cancelDownloadFile").put("file_id", fileId).put("only_if_pending", false))
+                    request(TdLibRequests.cancelDownloadFile(fileId, onlyIfPending = false))
                     downloadWaiters.remove(fileId)?.cancel(CancellationException("Transfer cancelled by user"))
                     transferByFileId.remove(fileId)
                 }
@@ -357,14 +337,9 @@ class TdLibJsonGateway(
                 val temporaryMessageId = uploadMessageTracker.messageIds(transferId).firstOrNull()
                     ?: mappedMessageKey?.messageId
                 if (temporaryMessageId != null) {
-                    val chat = getSavedMessagesChat()
-                    request(
-                        JSONObject()
-                            .put("@type", "deleteMessages")
-                            .put("chat_id", chat.chatId)
-                            .put("message_ids", JSONArray().put(temporaryMessageId))
-                            .put("revoke", false),
-                    )
+                    chatResolver.withChat { savedChat ->
+                        request(TdLibRequests.deleteMessages(savedChat.chatId, listOf(temporaryMessageId), revoke = false))
+                    }
                     transferByMessageId.entries.removeIf { it.value == transferId && it.key.messageId == temporaryMessageId }
                 }
                 uploadWaiters.remove(transferId.value)?.cancel(CancellationException("Transfer cancelled by user"))
@@ -374,39 +349,32 @@ class TdLibJsonGateway(
     }
 
     override suspend fun deleteRemoteMessage(remote: RemoteMessageId, revoke: Boolean) {
-        request(
-            JSONObject()
-                .put("@type", "deleteMessages")
-                .put("chat_id", remote.chatId)
-                .put("message_ids", JSONArray().put(remote.messageId))
-                .put("revoke", revoke),
-        )
+        awaitReadySession(_authorizationState)
+        request(TdLibRequests.deleteMessages(remote.chatId, listOf(remote.messageId), revoke))
     }
 
     override suspend fun sendMetadataRecord(text: String): RemoteMessageId {
         require(text.startsWith(MetadataRecordCodec.PREFIX)) { "Only encoded TeleDrive metadata may use this operation" }
-        val chat = getSavedMessagesChat()
-        val message = request(
-            JSONObject()
-                .put("@type", "sendMessage")
-                .put("chat_id", chat.chatId)
-                .put("topic_id", JSONObject.NULL)
-                .put("reply_to", JSONObject.NULL)
-                .put("options", JSONObject.NULL)
-                .put("reply_markup", JSONObject.NULL)
-                .put("input_message_content", inputMessageText(text)),
-        )
+        awaitReadySession(_authorizationState)
+        val chat = chatResolver.resolve()
+        val message = chatResolver.withChat { savedChat ->
+            request(TdLibRequests.sendMessage(savedChat.chatId, TdLibRequests.inputMessageText(text)))
+        }
         return RemoteMessageId(chat.chatId, message.optLong("id", 0L).takeIf { it > 0 } ?: throw StorageGatewayException("METADATA_RESPONSE_INVALID", "Telegram did not return the metadata message", false))
     }
 
     override suspend fun close() {
-        if (clientId != null) runCatching { request(JSONObject().put("@type", "close")) }
+        if (clientId != null) runCatching { request(TdLibRequests.close()) }
         receiverJob?.cancel()
         receiverJob = null
         clientId = null
         pendingRequests.values.forEach { it.cancel() }
         pendingRequests.clear()
         scope.cancel()
+        chatResolver.invalidate()
+        // The next start() creates a fresh TDLib client that must receive
+        // setTdlibParameters again.
+        tdlibParametersGate.markUnsent()
         _authorizationState.value = AuthorizationState.Closed
     }
 
@@ -420,15 +388,21 @@ class TdLibJsonGateway(
         val response = CompletableDeferred<JSONObject>()
         pendingRequests[extra] = response
         request.put("@extra", extra)
+        val type = request.type()
         try {
             sendRaw(request, id)
-            return withTimeout(60.seconds) { response.await() }.requireSuccessful()
+            val result = withTimeout(60.seconds) { response.await() }.requireSuccessful()
+            TeleDriveLog.d("tdlib.request", "type" to type, "outcome" to "ok")
+            return result
         } catch (timeout: TimeoutCancellationException) {
+            TeleDriveLog.d("tdlib.request", "type" to type, "outcome" to "timeout")
             throw StorageGatewayException("TIMEOUT", "Telegram did not respond in time", true, timeout)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            throw error.asStorageException()
+            val mapped = error.asStorageException()
+            TeleDriveLog.d("tdlib.request", "type" to type, "outcome" to "error", "error_code" to mapped.code, "error" to mapped.message)
+            throw mapped
         } finally {
             pendingRequests.remove(extra)
         }
@@ -458,7 +432,9 @@ class TdLibJsonGateway(
         json.optString("@extra").takeIf { it.isNotBlank() }?.let { extra ->
             pendingRequests.remove(extra)?.complete(json)
         }
-        when (json.type()) {
+        val type = json.type()
+        if (type.startsWith("update")) TeleDriveLog.d("tdlib.update", "type" to type)
+        when (type) {
             "updateAuthorizationState" -> handleAuthorizationState(json.safeObject("authorization_state"))
             "updateFile" -> handleFileUpdate(json.safeObject("file"))
             "updateNewMessage" -> handleNewMessage(json)
@@ -475,27 +451,31 @@ class TdLibJsonGateway(
 
     private fun handleAuthorizationState(state: JSONObject?) {
         state ?: return
+        TeleDriveLog.d("auth.state", "state" to state.type())
         when (state.type()) {
             "authorizationStateWaitTdlibParameters" -> {
                 _authorizationState.value = AuthorizationState.WaitingForTdlibParameters
-                if (!tdlibParametersSent) {
-                    tdlibParametersSent = true
+                if (tdlibParametersGate.shouldSend()) {
                     scope.launch {
                         runCatching {
                             val key = keyProvider.getOrCreate()
+                            appContext.filesDir.resolve("tdlib-data").mkdirs()
+                            appContext.filesDir.resolve("tdlib-files").mkdirs()
                             request(
-                                buildTdlibParameters(
+                                TdLibRequests.setTdlibParameters(
                                     credentials = credentials,
                                     databaseDirectory = appContext.filesDir.resolve("tdlib-data").absolutePath,
                                     filesDirectory = appContext.filesDir.resolve("tdlib-files").absolutePath,
                                     databaseKeyBase64 = Base64.encodeToString(key, Base64.NO_WRAP),
                                     applicationVersion = applicationVersion,
-                                ).also {
-                                    appContext.filesDir.resolve("tdlib-data").mkdirs()
-                                    appContext.filesDir.resolve("tdlib-files").mkdirs()
-                                },
+                                    systemLanguageCode = java.util.Locale.getDefault().toLanguageTag(),
+                                    deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".trim(),
+                                    systemVersion = android.os.Build.VERSION.RELEASE.orEmpty(),
+                                ),
                             )
                         }.onFailure { error ->
+                            // Allow a later attempt instead of leaving the session stuck.
+                            tdlibParametersGate.markUnsent()
                             _authorizationState.value = AuthorizationState.Error(message = error.asStorageException().message)
                         }
                     }
@@ -510,9 +490,20 @@ class TdLibJsonGateway(
             "authorizationStateWaitRegistration" -> _authorizationState.value = AuthorizationState.WaitingForRegistration(state.safeObject("terms_of_service")?.optString("text"))
             "authorizationStateWaitPremiumPurchase" -> _authorizationState.value = AuthorizationState.WaitingForPremiumPurchase
             "authorizationStateReady" -> _authorizationState.value = AuthorizationState.Ready
-            "authorizationStateLoggingOut" -> _authorizationState.value = AuthorizationState.LoggingOut
-            "authorizationStateClosing" -> _authorizationState.value = AuthorizationState.Closing
-            "authorizationStateClosed" -> _authorizationState.value = AuthorizationState.Closed
+            "authorizationStateLoggingOut" -> {
+                _authorizationState.value = AuthorizationState.LoggingOut
+                chatResolver.invalidate()
+                tdlibParametersGate.markUnsent()
+            }
+            "authorizationStateClosing" -> {
+                _authorizationState.value = AuthorizationState.Closing
+                chatResolver.invalidate()
+            }
+            "authorizationStateClosed" -> {
+                _authorizationState.value = AuthorizationState.Closed
+                chatResolver.invalidate()
+                tdlibParametersGate.markUnsent()
+            }
         }
     }
 
@@ -543,7 +534,7 @@ class TdLibJsonGateway(
         val message = update.safeObject("message") ?: return
         val sendingState = message.safeObject("sending_state")?.type()
         if (sendingState != "messageSendingStatePending") return
-        val chatId = message.optLong("chat_id", 0L).takeIf { it > 0L } ?: savedMessagesChat?.chatId ?: return
+        val chatId = message.optLong("chat_id", 0L).takeIf { it > 0L } ?: chatResolver.cached()?.chatId ?: return
         val messageId = message.optLong("id", 0L).takeIf { it > 0L } ?: return
         val storedFile = message.toStoredFile(chatId) ?: return
         val transferId = uploadMessageTracker.resolve(chatId, messageId) ?: return
@@ -551,7 +542,7 @@ class TdLibJsonGateway(
     }
 
     private fun handleMessageContent(update: JSONObject) {
-        val chatId = update.optLong("chat_id", 0L).takeIf { it > 0L } ?: savedMessagesChat?.chatId ?: return
+        val chatId = update.optLong("chat_id", 0L).takeIf { it > 0L } ?: chatResolver.cached()?.chatId ?: return
         val messageId = update.optLong("message_id", 0L).takeIf { it > 0L } ?: return
         val content = update.safeObject("new_content") ?: return
         val message = JSONObject()
@@ -565,7 +556,7 @@ class TdLibJsonGateway(
 
     private fun handleMessageSendSucceeded(update: JSONObject) {
         val message = update.safeObject("message") ?: return
-        val chatId = message.optLong("chat_id", 0L).takeIf { it > 0L } ?: savedMessagesChat?.chatId ?: 0L
+        val chatId = message.optLong("chat_id", 0L).takeIf { it > 0L } ?: chatResolver.cached()?.chatId ?: 0L
         val messageId = message.optLong("id", 0L).takeIf { it > 0L }
         val oldMessageId = update.optLong("old_message_id", 0L).takeIf { it > 0L }
         val transferId = uploadMessageTracker.resolve(chatId, messageId, oldMessageId)
@@ -583,7 +574,7 @@ class TdLibJsonGateway(
     private fun handleMessageSendFailed(update: JSONObject) {
         val message = update.safeObject("message")
         val chatId = message?.optLong("chat_id", 0L)?.takeIf { it > 0L }
-            ?: savedMessagesChat?.chatId
+            ?: chatResolver.cached()?.chatId
             ?: 0L
         val messageId = message?.optLong("id", 0L)?.takeIf { it > 0L }
         val oldMessageId = update.optLong("old_message_id", 0L).takeIf { it > 0L }
