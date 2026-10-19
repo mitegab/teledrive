@@ -81,7 +81,7 @@ class TdLibJsonGateway(
     private val transferTotals = ConcurrentHashMap<String, Long?>()
     private var clientId: Int? = null
     private var receiverJob: Job? = null
-    private var tdlibParametersSent = false
+    private val tdlibParametersGate = TdLibParametersGate()
     private val chatResolver = SavedMessagesChatResolver(
         send = { request(it) },
         currentUser = { getCurrentUser() },
@@ -147,6 +147,8 @@ class TdLibJsonGateway(
     override suspend fun logOut() {
         command(TdLibRequests.logOut())
         chatResolver.invalidate()
+        // A later session in this process may need to send parameters again.
+        tdlibParametersGate.markUnsent()
     }
 
     override suspend fun getCurrentUser(): TelegramUser {
@@ -360,6 +362,10 @@ class TdLibJsonGateway(
         pendingRequests.values.forEach { it.cancel() }
         pendingRequests.clear()
         scope.cancel()
+        chatResolver.invalidate()
+        // The next start() creates a fresh TDLib client that must receive
+        // setTdlibParameters again.
+        tdlibParametersGate.markUnsent()
         _authorizationState.value = AuthorizationState.Closed
     }
 
@@ -431,8 +437,7 @@ class TdLibJsonGateway(
         when (state.type()) {
             "authorizationStateWaitTdlibParameters" -> {
                 _authorizationState.value = AuthorizationState.WaitingForTdlibParameters
-                if (!tdlibParametersSent) {
-                    tdlibParametersSent = true
+                if (tdlibParametersGate.shouldSend()) {
                     scope.launch {
                         runCatching {
                             val key = keyProvider.getOrCreate()
@@ -451,6 +456,8 @@ class TdLibJsonGateway(
                                 ),
                             )
                         }.onFailure { error ->
+                            // Allow a later attempt instead of leaving the session stuck.
+                            tdlibParametersGate.markUnsent()
                             _authorizationState.value = AuthorizationState.Error(message = error.asStorageException().message)
                         }
                     }
@@ -465,9 +472,20 @@ class TdLibJsonGateway(
             "authorizationStateWaitRegistration" -> _authorizationState.value = AuthorizationState.WaitingForRegistration(state.safeObject("terms_of_service")?.optString("text"))
             "authorizationStateWaitPremiumPurchase" -> _authorizationState.value = AuthorizationState.WaitingForPremiumPurchase
             "authorizationStateReady" -> _authorizationState.value = AuthorizationState.Ready
-            "authorizationStateLoggingOut" -> _authorizationState.value = AuthorizationState.LoggingOut
-            "authorizationStateClosing" -> _authorizationState.value = AuthorizationState.Closing
-            "authorizationStateClosed" -> _authorizationState.value = AuthorizationState.Closed
+            "authorizationStateLoggingOut" -> {
+                _authorizationState.value = AuthorizationState.LoggingOut
+                chatResolver.invalidate()
+                tdlibParametersGate.markUnsent()
+            }
+            "authorizationStateClosing" -> {
+                _authorizationState.value = AuthorizationState.Closing
+                chatResolver.invalidate()
+            }
+            "authorizationStateClosed" -> {
+                _authorizationState.value = AuthorizationState.Closed
+                chatResolver.invalidate()
+                tdlibParametersGate.markUnsent()
+            }
         }
     }
 

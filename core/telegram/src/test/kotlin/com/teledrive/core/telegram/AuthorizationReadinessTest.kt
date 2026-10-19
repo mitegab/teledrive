@@ -84,3 +84,30 @@ class AuthorizationReadinessTest {
         }
     }
 }
+
+class TdLibParametersGateTest {
+
+    @Test
+    fun sendsOncePerClientAndAgainAfterReset() {
+        val gate = TdLibParametersGate()
+
+        assertTrue(gate.shouldSend())
+        assertEquals(false, gate.shouldSend())
+
+        gate.markUnsent()
+
+        assertTrue(gate.shouldSend())
+    }
+
+    @Test
+    fun failureRecoveryAllowsAnotherSubmission() {
+        val gate = TdLibParametersGate()
+        assertTrue(gate.shouldSend())
+
+        // Simulates the setTdlibParameters request failing: the session must
+        // not stay stuck without parameters.
+        gate.markUnsent()
+
+        assertTrue(gate.shouldSend())
+    }
+}
