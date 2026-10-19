@@ -145,6 +145,34 @@ class SyncFilesUseCaseTest {
         assertEquals(0, repository.reconcileCalls)
     }
 
+    @Test
+    fun scanEmitsPageAndCompletionDiagnostics() = runBlocking {
+        val repository = FakeRepository()
+        val gateway = FakeGateway(
+            mapOf(
+                0L to listOf(FilesPage(listOf(file(20)), HistoryCursor(10), messageCount = 2)),
+                10L to listOf(FilesPage(listOf(file(9)), HistoryCursor(3), messageCount = 1)),
+                3L to listOf(FilesPage(emptyList(), null, messageCount = 0)),
+            ),
+        )
+        val lines = mutableListOf<String>()
+        com.teledrive.core.model.TeleDriveLog.sink = { lines += it }
+        try {
+            SynchronizeFilesUseCase(gateway, repository).invoke()
+        } finally {
+            com.teledrive.core.model.TeleDriveLog.sink = null
+        }
+
+        val pageLogs = lines.filter { it.startsWith("sync.page") }
+        assertEquals(3, pageLogs.size)
+        assertTrue("page log should carry counts: ${pageLogs.first()}", pageLogs.first().contains("messages=2"))
+        assertTrue(pageLogs.first().contains("files=1"))
+        assertTrue(pageLogs.first().contains("next_cursor=10"))
+        val done = lines.single { it.startsWith("sync.done") }
+        assertTrue("done log: $done", done.contains("complete=true"))
+        assertTrue(done.contains("reconciled=true"))
+    }
+
     private fun file(messageId: Long) = StoredFile(
         remote = RemoteMessageId(42, messageId),
         tdlibFileId = messageId.toInt(),
