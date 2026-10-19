@@ -66,3 +66,52 @@ The mapper now covers document/PDF/ZIP content, photos, videos, audio/music, voi
 5. **Remaining validation:** Run the full Gradle unit/lint/build/instrumented suite and generate an APK when Gradle, Android SDK/NDK, generated TDLib libraries, and configured credentials are available. Inspect every resulting diff and continue with live-independent tests where prerequisites remain unavailable.
 
 Live Telegram behavior will not be reported as verified without an authenticated account and generated TDLib native libraries.
+
+---
+
+## Fix session: "Chat not found", broken sync, broken upload (2026-10-19)
+
+Branch: `arena/a15aa970-teledrive`. Full diagnosis with per-suspect verdicts and
+file:line evidence is in `docs/DIAGNOSIS.md`. Fixes were applied in the briefed
+order, one focused commit per defect, each with tests:
+
+| Commit | Fix |
+| --- | --- |
+| `8da2e54` | diagnosis note (3.1–3.7 verdicts against `td_api.tl` at `c15d3f5a`) |
+| `0a6adcd` | **3.1** Saved Messages resolution via `createPrivateChat` + `loadChats` fallback, validation, caching, invalidation, one self-heal retry (`SavedMessagesChatResolver`) |
+| `1cb85b3` | **3.2** `awaitReadySession` gate on every data-plane gateway call; clear `NOT_READY` errors on timeout/login-required/closing states |
+| `d235710` | **3.3** upload staging as `staging/<uuid>/<displayName>` (`UploadStagingRules`), legacy `upload-*.part` recovery kept, extension-preserving truncation |
+| `fa53abd` | **3.4** short/empty `getChatHistory` answers are retried a bounded number of times; deletions reconciled only after a completed full scan that saw messages |
+| `b2e3ac3` | **3.5** explicit error codes (`CHAT_NOT_FOUND`, explicit auth markers instead of `AUTH`/`PHONE`/`CODE` substrings); `CHAT_NOT_FOUND` self-heals once in the gateway |
+| `d69ac44` | **3.6** TDLib 1.8.68 request shapes: `inputMessageDocument` wraps `inputDocument`; email code wraps `emailAddressAuthenticationCode`; all builders in `TdLibRequests` with key-level tests |
+| `1b93753` | **3.7** `setTdlibParameters` gate resets on logout/close/turnover/failure; Saved Messages cache invalidated on every session-ending transition |
+| `497b7e4` | diagnostics: redacted `TeleDrive` structured logging + step-aware UI errors ("Syncing: could not open Saved Messages") |
+
+### What the tests cover now
+
+37 new JVM tests run against the real mapping/request/resolution/staging/sync
+code (JSON fixtures, no live Telegram): chat resolution paths and self-heal,
+readiness wait/timeout/fail-fast, upload staging layout and traversal rejection,
+sync empty/short-page retries and reconcile guards, error classification and
+retryability, and every TDLib request shape listed in the brief.
+
+### What remains unverified (needs a real device + account)
+
+- Live authorization, Saved Messages discovery, upload/download/delete flows.
+- That TDLib accepts the corrected `inputMessageDocument` in a live send and
+  names the document `report.pdf` end to end (shape is verified against
+  `td_api.tl` only).
+- `updateMessageSendSucceeded`/`Failed` ordering and 30-minute upload waiter
+  behavior under real network conditions.
+- The `app/` module (coordinators, WorkManager drain, Compose UI) compiles and
+  runs only under the Android toolchain; the offline harness covers `core/*`.
+
+### How this session was verified
+
+`./gradlew testDebugUnitTest` cannot run in this sandbox (the Gradle
+distribution and Maven repositories are unreachable). An offline harness —
+Kotlin 2.4.21 compiler + JDK 25, JUnit-compatible assertions, org.json and
+kotlinx-serialization compiled from pinned sources — compiled the
+`core/model`, `core/domain`, `core/telegram`, `core/testing` modules and ran
+their real test sources: **80/80 passing** (34 pre-existing, 46 new/updated).
+No live Telegram/Android result is claimed.
