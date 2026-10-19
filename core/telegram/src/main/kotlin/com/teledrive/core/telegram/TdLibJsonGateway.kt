@@ -22,6 +22,7 @@ import com.teledrive.core.model.TelegramUser
 import com.teledrive.core.model.TransferDirection
 import com.teledrive.core.model.TransferId
 import com.teledrive.core.model.TransferProgress
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.core.model.TransferState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -228,6 +229,12 @@ class TdLibJsonGateway(
 
     override suspend fun uploadDocument(request: UploadRequest): UploadResult {
         awaitReadySession(_authorizationState)
+        TeleDriveLog.d(
+            "upload.start",
+            "transfer_id" to request.transferId.value,
+            "file_name" to request.displayName,
+            "size" to request.sizeBytes,
+        )
         val chat = chatResolver.resolve()
         transferDirections[request.transferId.value] = TransferDirection.UPLOAD
         transferTotals[request.transferId.value] = request.sizeBytes
@@ -256,12 +263,14 @@ class TdLibJsonGateway(
                 return UploadResult(request.transferId, initial)
             }
             val finalFile = withTimeout(30.minutes) { waiter.await() }
+            TeleDriveLog.d("upload.done", "transfer_id" to request.transferId.value, "message_id" to finalFile.remote.messageId)
             emitTransfer(request.transferId, finalFile.sizeBytes ?: request.sizeBytes ?: 0L, finalFile.sizeBytes ?: request.sizeBytes, TransferState.COMPLETED, finalFile.remote, finalFile.tdlibFileId)
             return UploadResult(request.transferId, finalFile)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
             val mapped = error.asStorageException()
+            TeleDriveLog.d("upload.failed", "transfer_id" to request.transferId.value, "error_code" to mapped.code, "error" to mapped.message)
             emitTransfer(request.transferId, 0L, request.sizeBytes, TransferState.FAILED, errorMessage = mapped.message)
             throw mapped
         } finally {
@@ -379,15 +388,21 @@ class TdLibJsonGateway(
         val response = CompletableDeferred<JSONObject>()
         pendingRequests[extra] = response
         request.put("@extra", extra)
+        val type = request.type()
         try {
             sendRaw(request, id)
-            return withTimeout(60.seconds) { response.await() }.requireSuccessful()
+            val result = withTimeout(60.seconds) { response.await() }.requireSuccessful()
+            TeleDriveLog.d("tdlib.request", "type" to type, "outcome" to "ok")
+            return result
         } catch (timeout: TimeoutCancellationException) {
+            TeleDriveLog.d("tdlib.request", "type" to type, "outcome" to "timeout")
             throw StorageGatewayException("TIMEOUT", "Telegram did not respond in time", true, timeout)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            throw error.asStorageException()
+            val mapped = error.asStorageException()
+            TeleDriveLog.d("tdlib.request", "type" to type, "outcome" to "error", "error_code" to mapped.code, "error" to mapped.message)
+            throw mapped
         } finally {
             pendingRequests.remove(extra)
         }
@@ -417,7 +432,9 @@ class TdLibJsonGateway(
         json.optString("@extra").takeIf { it.isNotBlank() }?.let { extra ->
             pendingRequests.remove(extra)?.complete(json)
         }
-        when (json.type()) {
+        val type = json.type()
+        if (type.startsWith("update")) TeleDriveLog.d("tdlib.update", "type" to type)
+        when (type) {
             "updateAuthorizationState" -> handleAuthorizationState(json.safeObject("authorization_state"))
             "updateFile" -> handleFileUpdate(json.safeObject("file"))
             "updateNewMessage" -> handleNewMessage(json)
@@ -434,6 +451,7 @@ class TdLibJsonGateway(
 
     private fun handleAuthorizationState(state: JSONObject?) {
         state ?: return
+        TeleDriveLog.d("auth.state", "state" to state.type())
         when (state.type()) {
             "authorizationStateWaitTdlibParameters" -> {
                 _authorizationState.value = AuthorizationState.WaitingForTdlibParameters

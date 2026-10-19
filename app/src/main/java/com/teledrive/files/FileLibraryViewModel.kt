@@ -103,14 +103,14 @@ class FileLibraryViewModel @Inject constructor(
                 summary
             }
                 .onSuccess { summary -> _state.update { it.copy(isSyncing = false, hasSynced = true, syncIncomplete = !summary.complete) } }
-                .onFailure { error -> _state.update { it.copy(isSyncing = false, errorMessage = error.safeMessage()) } }
+                .onFailure { error -> _state.update { it.copy(isSyncing = false, errorMessage = error.stepMessage("Syncing")) } }
         }
     }
 
     fun upload(uri: android.net.Uri) {
         viewModelScope.launch {
             runCatching { uploadCoordinator.upload(uri) }
-                .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+                .onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Uploading")) } }
         }
     }
 
@@ -131,7 +131,7 @@ class FileLibraryViewModel @Inject constructor(
             runCatching {
                 repository.setFavorite(file.stableId, favorite)
                 appendMetadata(MetadataOperation.FavoriteFile(file.stableId, favorite))
-            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Updating the library")) } }
         }
     }
 
@@ -144,7 +144,7 @@ class FileLibraryViewModel @Inject constructor(
                 val folder = Folder(UUID.randomUUID().toString(), cleanName, parentId, now, now)
                 repository.createFolder(folder)
                 appendMetadata(MetadataOperation.CreateFolder(folder.id, folder.name, folder.parentId))
-            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Updating the library")) } }
         }
     }
 
@@ -155,7 +155,7 @@ class FileLibraryViewModel @Inject constructor(
             runCatching {
                 repository.renameFolder(folder.id, cleanName, System.currentTimeMillis() / 1000)
                 appendMetadata(MetadataOperation.RenameFolder(folder.id, cleanName))
-            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Updating the library")) } }
         }
     }
 
@@ -164,7 +164,7 @@ class FileLibraryViewModel @Inject constructor(
             runCatching {
                 repository.deleteFolder(folder.id)
                 appendMetadata(MetadataOperation.DeleteFolder(folder.id))
-            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Updating the library")) } }
         }
     }
 
@@ -173,21 +173,21 @@ class FileLibraryViewModel @Inject constructor(
             runCatching {
                 repository.setFolder(file.stableId, folderId)
                 appendMetadata(MetadataOperation.MoveFile(file.stableId, folderId))
-            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Updating the library")) } }
         }
     }
 
     fun download(file: StoredFile) {
         viewModelScope.launch {
             runCatching { downloadCoordinator.download(file) }
-                .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+                .onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Downloading")) } }
         }
     }
 
     fun export(localPath: String, destination: android.net.Uri) {
         viewModelScope.launch {
             runCatching { downloadCoordinator.export(localPath, destination) }
-                .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+                .onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Exporting")) } }
         }
     }
 
@@ -196,14 +196,14 @@ class FileLibraryViewModel @Inject constructor(
             runCatching {
                 val available = downloadCoordinator.download(file)
                 downloadCoordinator.launchLocalFile(available, share)
-            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Opening")) } }
         }
     }
 
     fun deleteLocalCopy(file: StoredFile) {
         viewModelScope.launch {
             runCatching { downloadCoordinator.removeLocalCopy(file) }
-                .onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+                .onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Removing the local copy")) } }
         }
     }
 
@@ -214,7 +214,7 @@ class FileLibraryViewModel @Inject constructor(
                 // Remote deletion is independent from the app-managed offline copy. Keep local bytes
                 // usable until the user explicitly removes them.
                 repository.updateFile(file.copy(remoteAvailability = RemoteAvailability.DELETED))
-            }.onFailure { error -> _state.update { it.copy(errorMessage = error.safeMessage()) } }
+            }.onFailure { error -> _state.update { it.copy(errorMessage = error.stepMessage("Deleting")) } }
         }
     }
 
@@ -235,4 +235,15 @@ class FileLibraryViewModel @Inject constructor(
 private fun Throwable.safeMessage(): String = when (this) {
     is StorageGatewayException -> message
     else -> message ?: "The operation could not be completed"
+}
+
+/**
+ * Prefixes the failed step so the user sees which action broke and why, instead
+ * of a bare TDLib string. Raw server text stays short and actionable.
+ */
+private fun Throwable.stepMessage(step: String): String = when {
+    this is StorageGatewayException && code == "CHAT_NOT_FOUND" -> "$step: could not open Saved Messages"
+    this is StorageGatewayException && code == "NOT_READY" -> "$step: ${message.orEmpty().ifBlank { "Telegram is not ready yet" }}"
+    this is StorageGatewayException && code == "SAVED_MESSAGES_NOT_FOUND" -> "$step: could not open Saved Messages"
+    else -> "$step: ${safeMessage()}"
 }

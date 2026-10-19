@@ -113,6 +113,23 @@ class SavedMessagesChatResolverTest {
     }
 
     @Test
+    fun resolutionPathIsLoggedWithoutSecrets() = runBlocking {
+        val sender = ScriptedTdLib()
+        sender.on("getChat") { tdError(400, "Chat not found") }
+        sender.on("createPrivateChat") { savedMessagesChat() }
+        val resolver = SavedMessagesChatResolver(sender::send, { me() })
+        val lines = mutableListOf<String>()
+        com.teledrive.core.model.TeleDriveLog.sink = { lines += it }
+        try {
+            resolver.resolve()
+        } finally {
+            com.teledrive.core.model.TeleDriveLog.sink = null
+        }
+
+        assertEquals(listOf("chat.resolve path=createPrivateChat chat_id=42"), lines)
+    }
+
+    @Test
     fun rejectsAChatThatIsNotTheCurrentUserPrivateChat() = runBlocking {
         val sender = ScriptedTdLib()
         val wrongChat = JSONObject()

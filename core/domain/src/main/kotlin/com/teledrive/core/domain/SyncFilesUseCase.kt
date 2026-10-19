@@ -6,6 +6,7 @@ import com.teledrive.core.model.FilesPage
 import com.teledrive.core.model.HistoryCursor
 import com.teledrive.core.model.HistoryPagination
 import com.teledrive.core.model.StoredFile
+import com.teledrive.core.model.TeleDriveLog
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -33,6 +34,13 @@ class SynchronizeFilesUseCase(
             pages++
             filesSeen += page.files.size
             messagesSeen += page.messageCount
+            TeleDriveLog.d(
+                "sync.page",
+                "page" to pages,
+                "messages" to page.messageCount,
+                "files" to page.files.size,
+                "next_cursor" to (page.nextCursor?.fromMessageId ?: -1L),
+            )
             if (fullHistoryScan) page.files.forEach { seenRemoteIds += it.stableId }
             // Persist the page before advancing the checkpoint. A failed Room write leaves the
             // previous cursor available for a safe retry after process recreation.
@@ -50,6 +58,14 @@ class SynchronizeFilesUseCase(
         // An empty or error-interrupted scan must never mark remote files deleted.
         if (complete && fullHistoryScan && messagesSeen > 0) repository.reconcileRemoteFiles(seenRemoteIds)
         repository.saveHistoryCursor(if (complete) HistoryCursor() else cursor)
+        TeleDriveLog.d(
+            "sync.done",
+            "pages" to pages,
+            "messages" to messagesSeen,
+            "files" to filesSeen,
+            "complete" to complete,
+            "reconciled" to (complete && fullHistoryScan && messagesSeen > 0),
+        )
         return SyncSummary(pages = pages, filesSeen = filesSeen, complete = complete, messagesSeen = messagesSeen)
     }
 

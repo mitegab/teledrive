@@ -1,6 +1,7 @@
 package com.teledrive.core.telegram
 
 import com.teledrive.core.domain.StorageGatewayException
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.core.model.SavedMessagesChat
 import com.teledrive.core.model.TelegramUser
 import org.json.JSONObject
@@ -39,22 +40,29 @@ internal class SavedMessagesChatResolver(
         val user = currentUser()
         var lastError: Throwable? = null
         try {
-            return adopt(send(TdLibRequests.getChat(user.id)), user)
+            return adopt(send(TdLibRequests.getChat(user.id)), user).also {
+                TeleDriveLog.d("chat.resolve", "path" to "getChat", "chat_id" to it.chatId)
+            }
         } catch (error: Throwable) {
             lastError = error
         }
         try {
-            return adopt(send(TdLibRequests.createPrivateChat(user.id, force = false)), user)
+            return adopt(send(TdLibRequests.createPrivateChat(user.id, force = false)), user).also {
+                TeleDriveLog.d("chat.resolve", "path" to "createPrivateChat", "chat_id" to it.chatId)
+            }
         } catch (error: Throwable) {
             lastError = error
         }
         // Cold clients may need the main chat list loaded before any chat is known.
         try {
             send(TdLibRequests.loadChats(limit = LOAD_CHATS_LIMIT))
-            return adopt(send(TdLibRequests.getChat(user.id)), user)
+            return adopt(send(TdLibRequests.getChat(user.id)), user).also {
+                TeleDriveLog.d("chat.resolve", "path" to "loadChats", "chat_id" to it.chatId)
+            }
         } catch (error: Throwable) {
             lastError = error
         }
+        TeleDriveLog.d("chat.resolve", "path" to "failed")
         throw StorageGatewayException(
             code = SAVED_MESSAGES_NOT_FOUND,
             message = "The authenticated Telegram account did not expose its Saved Messages chat",
@@ -77,6 +85,7 @@ internal class SavedMessagesChatResolver(
             } catch (error: StorageGatewayException) {
                 if (error.code == CHAT_NOT_FOUND && attempt == 0) {
                     attempt++
+                    TeleDriveLog.d("chat.selfheal", "action" to "invalidate-and-retry")
                     invalidate()
                     continue
                 }
