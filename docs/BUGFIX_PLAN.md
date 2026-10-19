@@ -89,7 +89,7 @@ order, one focused commit per defect, each with tests:
 
 ### What the tests cover now
 
-37 new JVM tests run against the real mapping/request/resolution/staging/sync
+46 new and updated JVM tests run against the real mapping/request/resolution/staging/sync
 code (JSON fixtures, no live Telegram): chat resolution paths and self-heal,
 readiness wait/timeout/fail-fast, upload staging layout and traversal rejection,
 sync empty/short-page retries and reconcile guards, error classification and
