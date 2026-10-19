@@ -20,6 +20,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import android.net.Uri
+import com.teledrive.files.viewer.ViewerScreen
 import com.teledrive.session.SessionViewModel
 import com.teledrive.files.FileBrowserScreen
 import com.teledrive.transfers.TransfersScreen
@@ -42,7 +46,7 @@ fun AuthenticatedNavHost(sessionViewModel: SessionViewModel, settingsViewModel: 
     val currentRoute = backStackEntry?.destination?.route
     Scaffold(
         bottomBar = {
-            NavigationBar {
+            if (currentRoute?.startsWith("viewer/") != true) NavigationBar {
                 destinations.forEach { destination ->
                     NavigationBarItem(
                         selected = currentRoute == destination.route,
@@ -62,7 +66,11 @@ fun AuthenticatedNavHost(sessionViewModel: SessionViewModel, settingsViewModel: 
     ) { padding ->
         NavHost(navController, startDestination = "home", modifier = Modifier.padding(padding)) {
             composable("home") { HomeScreen(onOpenFiles = { navController.navigate("files") }, onLogout = sessionViewModel::logout) }
-            composable("files") { FileBrowserScreen() }
+            composable("files") { FileBrowserScreen(onOpenViewer = { id, imageIds -> navController.navigate("viewer/${Uri.encode(id)}?images=${Uri.encode(imageIds.joinToString(","))}") }) }
+            composable("viewer/{stableId}?images={images}", arguments = listOf(navArgument("stableId") { type = NavType.StringType }, navArgument("images") { type = NavType.StringType; defaultValue = "" })) { entry ->
+                val imageIds = Uri.decode(entry.arguments?.getString("images").orEmpty()).split(',').filter(String::isNotBlank)
+                ViewerScreen(stableId = Uri.decode(entry.arguments?.getString("stableId").orEmpty()), imageIds = imageIds, onBack = { navController.popBackStack() })
+            }
             composable("transfers") { TransfersScreen() }
             composable("settings") { SettingsScreen(settingsViewModel = settingsViewModel, onLogout = sessionViewModel::logout) }
         }

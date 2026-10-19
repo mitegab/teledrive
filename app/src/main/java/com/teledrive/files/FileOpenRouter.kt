@@ -20,30 +20,30 @@ class FileOpenRouter @Inject constructor(
             ?: throw IOException("The local cached file is no longer available")
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(path))
         val mimeType = resolveMimeType(file)
+        if (!share && mimeType == null) {
+            throw IOException("No app can open this file type. Export it to choose another location.")
+        }
         val intent = if (share) {
-            Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uri)
+            ViewerIntents.share(uri, mimeType ?: "application/octet-stream", file.originalFilename)
         } else {
-            Intent(Intent.ACTION_VIEW, uri)
-        }.apply {
-            type = mimeType
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            clipData = android.content.ClipData.newRawUri(file.originalFilename, uri)
+            ViewerIntents.view(uri, mimeType!!, file.originalFilename)
         }
-        if (context.packageManager.queryIntentActivities(intent, 0).isEmpty()) {
-            throw IOException("No installed Android app can open ${file.originalFilename} as $mimeType")
+        try {
+            context.startActivity(
+                Intent.createChooser(
+                    intent,
+                    if (share) "Share ${file.originalFilename}" else "Open ${file.originalFilename}",
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
+            )
+        } catch (error: android.content.ActivityNotFoundException) {
+            throw IOException("No installed Android app can open ${file.originalFilename} as ${mimeType ?: "a file"}", error)
         }
-        context.startActivity(
-            Intent.createChooser(
-                intent,
-                if (share) "Share ${file.originalFilename}" else "Open ${file.originalFilename}",
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION),
-        )
     }
 
     companion object {
         private val GENERIC_MIME_TYPES = setOf("application/octet-stream", "binary/octet-stream")
 
-        fun resolveMimeType(file: StoredFile): String {
+        fun resolveMimeType(file: StoredFile): String? {
             file.mimeType?.trim()?.takeIf { it.isNotEmpty() && it !in GENERIC_MIME_TYPES }?.let { return it }
             val extension = file.originalFilename.substringAfterLast('.', "").lowercase()
             return MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
@@ -59,7 +59,7 @@ class FileOpenRouter @Inject constructor(
                     "png" -> "image/png"
                     "webp" -> "image/webp"
                     "gif" -> "image/gif"
-                    else -> "*/*"
+                    else -> null
                 }
         }
     }
