@@ -155,6 +155,7 @@ class TdLibJsonGateway(
     }
 
     override suspend fun getCurrentUser(): TelegramUser {
+        awaitReadySession(_authorizationState)
         val user = request(JSONObject().put("@type", "getMe"))
         val id = user.optLong("id", 0L).takeIf { it > 0 } ?: throw StorageGatewayException(
             code = "INVALID_USER",
@@ -172,10 +173,14 @@ class TdLibJsonGateway(
         )
     }
 
-    override suspend fun getSavedMessagesChat(): SavedMessagesChat = chatResolver.resolve()
+    override suspend fun getSavedMessagesChat(): SavedMessagesChat {
+        awaitReadySession(_authorizationState)
+        return chatResolver.resolve()
+    }
 
     override suspend fun getFilesPage(cursor: HistoryCursor, limit: Int): FilesPage {
-        val chat = getSavedMessagesChat()
+        awaitReadySession(_authorizationState)
+        val chat = chatResolver.resolve()
         val messages = request(
             JSONObject()
                 .put("@type", "getChatHistory")
@@ -205,7 +210,8 @@ class TdLibJsonGateway(
     }
 
     override suspend fun getMetadataMessagesPage(cursor: HistoryCursor, limit: Int): MetadataMessagesPage {
-        val chat = getSavedMessagesChat()
+        awaitReadySession(_authorizationState)
+        val chat = chatResolver.resolve()
         val messages = request(
             JSONObject()
                 .put("@type", "getChatHistory")
@@ -232,7 +238,8 @@ class TdLibJsonGateway(
     }
 
     override suspend fun uploadDocument(request: UploadRequest): UploadResult {
-        val chat = getSavedMessagesChat()
+        awaitReadySession(_authorizationState)
+        val chat = chatResolver.resolve()
         transferDirections[request.transferId.value] = TransferDirection.UPLOAD
         transferTotals[request.transferId.value] = request.sizeBytes
         emitTransfer(request.transferId, 0L, request.sizeBytes, TransferState.RUNNING)
@@ -284,6 +291,7 @@ class TdLibJsonGateway(
     }
 
     override suspend fun downloadFile(request: DownloadRequest): DownloadResult {
+        awaitReadySession(_authorizationState)
         if (downloadWaiters.containsKey(request.tdlibFileId)) {
             throw StorageGatewayException("TRANSFER_ALREADY_ACTIVE", "This file is already downloading", false)
         }
@@ -328,6 +336,7 @@ class TdLibJsonGateway(
     }
 
     override suspend fun cancelTransfer(transferId: TransferId, direction: TransferDirection, tdlibFileId: Int?) {
+        awaitReadySession(_authorizationState)
         when (direction) {
             TransferDirection.DOWNLOAD -> {
                 val fileId = tdlibFileId ?: transferByFileId.entries.firstOrNull { it.value == transferId }?.key
@@ -360,6 +369,7 @@ class TdLibJsonGateway(
     }
 
     override suspend fun deleteRemoteMessage(remote: RemoteMessageId, revoke: Boolean) {
+        awaitReadySession(_authorizationState)
         request(
             JSONObject()
                 .put("@type", "deleteMessages")
@@ -371,7 +381,8 @@ class TdLibJsonGateway(
 
     override suspend fun sendMetadataRecord(text: String): RemoteMessageId {
         require(text.startsWith(MetadataRecordCodec.PREFIX)) { "Only encoded TeleDrive metadata may use this operation" }
-        val chat = getSavedMessagesChat()
+        awaitReadySession(_authorizationState)
+        val chat = chatResolver.resolve()
         val message = request(
             JSONObject()
                 .put("@type", "sendMessage")
