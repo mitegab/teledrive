@@ -67,3 +67,23 @@ internal suspend fun awaitReadySession(
 }
 
 internal const val READY_TIMEOUT_MILLIS: Long = 30_000L
+
+/**
+ * Guards one-shot `setTdlibParameters` submission per TDLib client instance.
+ * The flag must reset when the client closes or the session turns over, or a
+ * later session never answers `authorizationStateWaitTdlibParameters` again.
+ */
+internal class TdLibParametersGate {
+    @Volatile
+    private var sent = false
+
+    fun shouldSend(): Boolean {
+        if (sent) return false
+        sent = true
+        return true
+    }
+
+    fun markUnsent() {
+        sent = false
+    }
+}
