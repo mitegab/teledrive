@@ -82,7 +82,10 @@ class TdLibJsonGateway(
     private var clientId: Int? = null
     private var receiverJob: Job? = null
     private var tdlibParametersSent = false
-    private var savedMessagesChat: SavedMessagesChat? = null
+    private val chatResolver = SavedMessagesChatResolver(
+        send = { request(it) },
+        currentUser = { getCurrentUser() },
+    )
 
     override val authorizationState: StateFlow<AuthorizationState> = _authorizationState.asStateFlow()
     override val transferUpdates: Flow<TransferProgress> = _transferUpdates.asSharedFlow()
@@ -147,8 +150,8 @@ class TdLibJsonGateway(
     }
 
     override suspend fun logOut() {
-        command(JSONObject().put("@type", "logOut"))
-        savedMessagesChat = null
+        command(TdLibRequests.logOut())
+        chatResolver.invalidate()
     }
 
     override suspend fun getCurrentUser(): TelegramUser {
@@ -169,24 +172,7 @@ class TdLibJsonGateway(
         )
     }
 
-    override suspend fun getSavedMessagesChat(): SavedMessagesChat {
-        savedMessagesChat?.let { return it }
-        val user = getCurrentUser()
-        val chat = request(JSONObject().put("@type", "getChat").put("chat_id", user.id))
-        val chatType = chat.safeObject("type")
-        val isCurrentUserChat = chatType?.type() == "chatTypePrivate" && chatType.optLong("user_id", 0L) == user.id
-        if (!isCurrentUserChat) {
-            throw StorageGatewayException(
-                code = "SAVED_MESSAGES_NOT_FOUND",
-                message = "The authenticated Telegram account did not expose its Saved Messages chat",
-                retryable = false,
-            )
-        }
-        return SavedMessagesChat(
-            chatId = chat.optLong("id", user.id),
-            title = chat.optString("title").ifBlank { "Saved Messages" },
-        ).also { savedMessagesChat = it }
-    }
+    override suspend fun getSavedMessagesChat(): SavedMessagesChat = chatResolver.resolve()
 
     override suspend fun getFilesPage(cursor: HistoryCursor, limit: Int): FilesPage {
         val chat = getSavedMessagesChat()
@@ -543,7 +529,7 @@ class TdLibJsonGateway(
         val message = update.safeObject("message") ?: return
         val sendingState = message.safeObject("sending_state")?.type()
         if (sendingState != "messageSendingStatePending") return
-        val chatId = message.optLong("chat_id", 0L).takeIf { it > 0L } ?: savedMessagesChat?.chatId ?: return
+        val chatId = message.optLong("chat_id", 0L).takeIf { it > 0L } ?: chatResolver.cached()?.chatId ?: return
         val messageId = message.optLong("id", 0L).takeIf { it > 0L } ?: return
         val storedFile = message.toStoredFile(chatId) ?: return
         val transferId = uploadMessageTracker.resolve(chatId, messageId) ?: return
@@ -551,7 +537,7 @@ class TdLibJsonGateway(
     }
 
     private fun handleMessageContent(update: JSONObject) {
-        val chatId = update.optLong("chat_id", 0L).takeIf { it > 0L } ?: savedMessagesChat?.chatId ?: return
+        val chatId = update.optLong("chat_id", 0L).takeIf { it > 0L } ?: chatResolver.cached()?.chatId ?: return
         val messageId = update.optLong("message_id", 0L).takeIf { it > 0L } ?: return
         val content = update.safeObject("new_content") ?: return
         val message = JSONObject()
@@ -565,7 +551,7 @@ class TdLibJsonGateway(
 
     private fun handleMessageSendSucceeded(update: JSONObject) {
         val message = update.safeObject("message") ?: return
-        val chatId = message.optLong("chat_id", 0L).takeIf { it > 0L } ?: savedMessagesChat?.chatId ?: 0L
+        val chatId = message.optLong("chat_id", 0L).takeIf { it > 0L } ?: chatResolver.cached()?.chatId ?: 0L
         val messageId = message.optLong("id", 0L).takeIf { it > 0L }
         val oldMessageId = update.optLong("old_message_id", 0L).takeIf { it > 0L }
         val transferId = uploadMessageTracker.resolve(chatId, messageId, oldMessageId)
@@ -583,7 +569,7 @@ class TdLibJsonGateway(
     private fun handleMessageSendFailed(update: JSONObject) {
         val message = update.safeObject("message")
         val chatId = message?.optLong("chat_id", 0L)?.takeIf { it > 0L }
-            ?: savedMessagesChat?.chatId
+            ?: chatResolver.cached()?.chatId
             ?: 0L
         val messageId = message?.optLong("id", 0L)?.takeIf { it > 0L }
         val oldMessageId = update.optLong("old_message_id", 0L).takeIf { it > 0L }
