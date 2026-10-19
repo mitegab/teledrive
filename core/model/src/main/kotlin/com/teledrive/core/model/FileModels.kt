@@ -126,7 +126,16 @@ object FilenameRules {
             .joinToString("")
             .trim()
             .ifEmpty { fallback }
-        return cleaned.take(maxDisplayLength).ifEmpty { fallback }
+        return truncateKeepingExtension(cleaned).ifEmpty { fallback }
+    }
+
+    /** Long names are shortened but keep their extension so file types stay detectable. */
+    private fun truncateKeepingExtension(name: String): String {
+        if (name.length <= maxDisplayLength) return name
+        val extension = name.substringAfterLast('.', "")
+        val suffix = if (extension.isEmpty() || extension == name) "" else ".$extension"
+        val stem = name.removeSuffix(suffix).take((maxDisplayLength - suffix.length).coerceAtLeast(0))
+        return stem + suffix
     }
 
     fun extension(filename: String): String = filename

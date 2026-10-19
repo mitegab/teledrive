@@ -1,6 +1,5 @@
 package com.teledrive.core.telegram
 
-import android.os.Build
 import com.teledrive.core.domain.GatewayErrorMapper
 import com.teledrive.core.domain.StorageGatewayException
 import com.teledrive.core.model.FileKind
@@ -201,39 +200,3 @@ internal fun JSONObject.downloadedBytes(): Long = safeObject("local")?.optLong("
 internal fun JSONObject.completedDownload(): Boolean = safeObject("local")?.optBoolean("is_downloading_completed", false) == true
 
 internal fun JSONObject.completedUpload(): Boolean = safeObject("remote")?.optBoolean("is_uploading_completed", false) == true
-
-internal fun inputMessageDocument(path: String): JSONObject = JSONObject()
-    .put("@type", "inputMessageDocument")
-    .put("document", JSONObject().put("@type", "inputFileLocal").put("path", path))
-    .put("thumbnail", JSONObject.NULL)
-    .put("disable_content_type_detection", false)
-    .put("caption", JSONObject.NULL)
-
-internal fun inputMessageText(text: String): JSONObject = JSONObject()
-    .put("@type", "inputMessageText")
-    .put("text", JSONObject().put("@type", "formattedText").put("text", text).put("entities", JSONArray()))
-    .put("link_preview_options", JSONObject.NULL)
-    .put("clear_draft", true)
-
-internal fun buildTdlibParameters(
-    credentials: TelegramCredentials,
-    databaseDirectory: String,
-    filesDirectory: String,
-    databaseKeyBase64: String,
-    applicationVersion: String,
-): JSONObject = JSONObject()
-    .put("@type", "setTdlibParameters")
-    .put("use_test_dc", false)
-    .put("database_directory", databaseDirectory)
-    .put("files_directory", filesDirectory)
-    .put("database_encryption_key", databaseKeyBase64)
-    .put("use_file_database", true)
-    .put("use_chat_info_database", true)
-    .put("use_message_database", true)
-    .put("use_secret_chats", false)
-    .put("api_id", credentials.apiId)
-    .put("api_hash", credentials.apiHash)
-    .put("system_language_code", java.util.Locale.getDefault().toLanguageTag())
-    .put("device_model", "${Build.MANUFACTURER} ${Build.MODEL}".trim())
-    .put("system_version", Build.VERSION.RELEASE.orEmpty())
-    .put("application_version", applicationVersion)

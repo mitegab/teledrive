@@ -6,6 +6,12 @@ data class FilesPage(
     val files: List<StoredFile>,
     val nextCursor: HistoryCursor?,
     val approximateTotalCount: Int? = null,
+    /**
+     * Raw messages this page covered, including metadata/text messages that are
+     * not user files. 0 means TDLib answered with no messages at all, which is
+     * the only reliable end-of-history signal; short pages can occur earlier.
+     */
+    val messageCount: Int = files.size,
 )
 
 data class MetadataMessagesPage(
