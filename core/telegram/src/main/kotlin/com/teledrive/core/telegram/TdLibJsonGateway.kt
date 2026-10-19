@@ -180,16 +180,18 @@ class TdLibJsonGateway(
 
     override suspend fun getFilesPage(cursor: HistoryCursor, limit: Int): FilesPage {
         awaitReadySession(_authorizationState)
-        val chat = chatResolver.resolve()
-        val messages = request(
-            JSONObject()
-                .put("@type", "getChatHistory")
-                .put("chat_id", chat.chatId)
-                .put("from_message_id", cursor.fromMessageId)
-                .put("offset", 0)
-                .put("limit", limit.coerceIn(1, 100))
-                .put("only_local", false),
-        ).safeArray("messages") ?: JSONArray()
+        val messages = chatResolver.withChat { chat ->
+            request(
+                JSONObject()
+                    .put("@type", "getChatHistory")
+                    .put("chat_id", chat.chatId)
+                    .put("from_message_id", cursor.fromMessageId)
+                    .put("offset", 0)
+                    .put("limit", limit.coerceIn(1, 100))
+                    .put("only_local", false),
+            )
+        }.safeArray("messages") ?: JSONArray()
+        val savedChatId = chatResolver.cached()?.chatId ?: 0L
 
         val files = buildList {
             for (index in 0 until messages.length()) {
@@ -198,7 +200,7 @@ class TdLibJsonGateway(
                 val text = if (content?.type() == "messageText") content.safeObject("text")?.optString("text") else null
                 // Reserved TeleDrive metadata is an internal event, never a user file.
                 if (MetadataRecordCodec.decode(text) != com.teledrive.core.model.MetadataDecodeResult.NotMetadata) continue
-                message.toStoredFile(chat.chatId)?.let(::add)
+                message.toStoredFile(savedChatId)?.let(::add)
             }
         }
         val oldestMessageId = (0 until messages.length())
@@ -216,16 +218,17 @@ class TdLibJsonGateway(
 
     override suspend fun getMetadataMessagesPage(cursor: HistoryCursor, limit: Int): MetadataMessagesPage {
         awaitReadySession(_authorizationState)
-        val chat = chatResolver.resolve()
-        val messages = request(
-            JSONObject()
-                .put("@type", "getChatHistory")
-                .put("chat_id", chat.chatId)
-                .put("from_message_id", cursor.fromMessageId)
-                .put("offset", 0)
-                .put("limit", limit.coerceIn(1, 100))
-                .put("only_local", false),
-        ).safeArray("messages") ?: JSONArray()
+        val messages = chatResolver.withChat { chat ->
+            request(
+                JSONObject()
+                    .put("@type", "getChatHistory")
+                    .put("chat_id", chat.chatId)
+                    .put("from_message_id", cursor.fromMessageId)
+                    .put("offset", 0)
+                    .put("limit", limit.coerceIn(1, 100))
+                    .put("only_local", false),
+            )
+        }.safeArray("messages") ?: JSONArray()
         val records = buildList {
             for (index in 0 until messages.length()) {
                 val message = messages.optJSONObject(index) ?: continue
@@ -250,24 +253,28 @@ class TdLibJsonGateway(
         emitTransfer(request.transferId, 0L, request.sizeBytes, TransferState.RUNNING)
         val waiter = CompletableDeferred<StoredFile>()
         uploadWaiters[request.transferId.value] = waiter
-        uploadMessageTracker.register(request.transferId, chat.chatId)
         try {
-            val message = request(
-                JSONObject()
-                    .put("@type", "sendMessage")
-                    .put("chat_id", chat.chatId)
-                    .put("topic_id", JSONObject.NULL)
-                    .put("reply_to", JSONObject.NULL)
-                    .put("options", JSONObject.NULL)
-                    .put("reply_markup", JSONObject.NULL)
-                    .put("input_message_content", inputMessageDocument(request.localPath)),
-            )
+            var usedChatId = chat.chatId
+            val message = chatResolver.withChat { savedChat ->
+                usedChatId = savedChat.chatId
+                uploadMessageTracker.register(request.transferId, savedChat.chatId)
+                request(
+                    JSONObject()
+                        .put("@type", "sendMessage")
+                        .put("chat_id", savedChat.chatId)
+                        .put("topic_id", JSONObject.NULL)
+                        .put("reply_to", JSONObject.NULL)
+                        .put("options", JSONObject.NULL)
+                        .put("reply_markup", JSONObject.NULL)
+                        .put("input_message_content", inputMessageDocument(request.localPath)),
+                )
+            }
+            uploadMessageTracker.bind(request.transferId, message.optLong("id", 0L).takeIf { it > 0L })
             val messageId = message.optLong("id", 0L).takeIf { it > 0L }
             messageId?.let {
-                uploadMessageTracker.bind(request.transferId, it)
-                transferByMessageId[MessageKey(chat.chatId, it)] = request.transferId
+                transferByMessageId[MessageKey(usedChatId, it)] = request.transferId
             }
-            val initial = message.toStoredFile(chat.chatId)
+            val initial = message.toStoredFile(usedChatId)
             initial?.tdlibFileId?.let { transferByFileId[it] = request.transferId }
             // The send response can be a provisional message or can omit usable content. In both cases,
             // keep the persisted transfer alive until a later message update supplies the final media.
@@ -357,14 +364,15 @@ class TdLibJsonGateway(
                 val temporaryMessageId = uploadMessageTracker.messageIds(transferId).firstOrNull()
                     ?: mappedMessageKey?.messageId
                 if (temporaryMessageId != null) {
-                    val chat = getSavedMessagesChat()
-                    request(
-                        JSONObject()
-                            .put("@type", "deleteMessages")
-                            .put("chat_id", chat.chatId)
-                            .put("message_ids", JSONArray().put(temporaryMessageId))
-                            .put("revoke", false),
-                    )
+                    chatResolver.withChat { savedChat ->
+                        request(
+                            JSONObject()
+                                .put("@type", "deleteMessages")
+                                .put("chat_id", savedChat.chatId)
+                                .put("message_ids", JSONArray().put(temporaryMessageId))
+                                .put("revoke", false),
+                        )
+                    }
                     transferByMessageId.entries.removeIf { it.value == transferId && it.key.messageId == temporaryMessageId }
                 }
                 uploadWaiters.remove(transferId.value)?.cancel(CancellationException("Transfer cancelled by user"))
@@ -388,16 +396,18 @@ class TdLibJsonGateway(
         require(text.startsWith(MetadataRecordCodec.PREFIX)) { "Only encoded TeleDrive metadata may use this operation" }
         awaitReadySession(_authorizationState)
         val chat = chatResolver.resolve()
-        val message = request(
-            JSONObject()
-                .put("@type", "sendMessage")
-                .put("chat_id", chat.chatId)
-                .put("topic_id", JSONObject.NULL)
-                .put("reply_to", JSONObject.NULL)
-                .put("options", JSONObject.NULL)
-                .put("reply_markup", JSONObject.NULL)
-                .put("input_message_content", inputMessageText(text)),
-        )
+        val message = chatResolver.withChat { savedChat ->
+            request(
+                JSONObject()
+                    .put("@type", "sendMessage")
+                    .put("chat_id", savedChat.chatId)
+                    .put("topic_id", JSONObject.NULL)
+                    .put("reply_to", JSONObject.NULL)
+                    .put("options", JSONObject.NULL)
+                    .put("reply_markup", JSONObject.NULL)
+                    .put("input_message_content", inputMessageText(text)),
+            )
+        }
         return RemoteMessageId(chat.chatId, message.optLong("id", 0L).takeIf { it > 0 } ?: throw StorageGatewayException("METADATA_RESPONSE_INVALID", "Telegram did not return the metadata message", false))
     }
 
