@@ -135,9 +135,20 @@ private fun decodeOriented(path: String): android.graphics.Bitmap? {
     while (bounds.outWidth / sample > 4096 || bounds.outHeight / sample > 4096 || (bounds.outWidth / sample).toLong() * (bounds.outHeight / sample) > 16_000_000) sample *= 2
     val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
     val orientation = runCatching { ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
-    val degrees = when (orientation) { ExifInterface.ORIENTATION_ROTATE_90 -> 90f; ExifInterface.ORIENTATION_ROTATE_180 -> 180f; ExifInterface.ORIENTATION_ROTATE_270 -> 270f; else -> 0f }
-    if (degrees == 0f) return bitmap
-    return android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(degrees) }, true).also { if (it !== bitmap) bitmap.recycle() }
+    val transform = Matrix().apply {
+        when (orientation) {
+            ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
+            ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
+            ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
+            ExifInterface.ORIENTATION_TRANSPOSE -> { setRotate(90f); postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
+            ExifInterface.ORIENTATION_TRANSVERSE -> { setRotate(-90f); postScale(-1f, 1f) }
+            ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(270f)
+            else -> Unit
+        }
+    }
+    if (orientation !in ExifInterface.ORIENTATION_FLIP_HORIZONTAL..ExifInterface.ORIENTATION_ROTATE_270) return bitmap
+    return android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, transform, true).also { if (it !== bitmap) bitmap.recycle() }
 }
 
 private fun decodeAnimated(path: String): Drawable? {
