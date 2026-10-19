@@ -206,7 +206,12 @@ class TdLibJsonGateway(
             .minOrNull()
         val nextCursor = oldestMessageId?.takeIf { it > 0 && (cursor.fromMessageId == 0L || it < cursor.fromMessageId) }
             ?.let(::HistoryCursor)
-        return FilesPage(files = files, nextCursor = nextCursor, approximateTotalCount = null)
+        return FilesPage(
+            files = files,
+            nextCursor = nextCursor,
+            approximateTotalCount = null,
+            messageCount = messages.length(),
+        )
     }
 
     override suspend fun getMetadataMessagesPage(cursor: HistoryCursor, limit: Int): MetadataMessagesPage {
