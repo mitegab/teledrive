@@ -1,6 +1,5 @@
 package com.teledrive.files
 
-import android.graphics.BitmapFactory
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,7 +61,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.foundation.Image
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -73,13 +71,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -97,17 +93,13 @@ import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.SortDirection
 import com.teledrive.core.model.SortField
 import com.teledrive.core.model.StoredFile
-import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
+fun FileBrowserScreen(onOpenViewer: (String, List<String>) -> Unit = { _, _ -> }, viewModel: FileLibraryViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var selectedFile by remember { mutableStateOf<StoredFile?>(null) }
-    var previewFile by remember { mutableStateOf<StoredFile?>(null) }
     var showFilterMenu by rememberSaveable { mutableStateOf(false) }
     var showSortMenu by rememberSaveable { mutableStateOf(false) }
     var showCreateFolder by rememberSaveable { mutableStateOf(false) }
@@ -220,13 +212,13 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
             } else if (state.isGrid) {
                 LazyVerticalGrid(columns = GridCells.Adaptive(150.dp), contentPadding = PaddingValues(bottom = 100.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(state.files, key = { it.stableId }) { file ->
-                        FileGridCard(file, onClick = { selectedFile = file }, onFavorite = { viewModel.setFavorite(file, !file.favorite) })
+                        FileGridCard(file, onClick = { if (com.teledrive.files.viewer.DefaultViewerRouter().route(file) !is com.teledrive.files.viewer.ViewerTarget.External) onOpenViewer(file.stableId, state.files.filter { com.teledrive.files.viewer.DefaultViewerRouter().route(it) == com.teledrive.files.viewer.ViewerTarget.InAppImage }.map { it.stableId }) else selectedFile = file }, onFavorite = { viewModel.setFavorite(file, !file.favorite) })
                     }
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.files, key = { it.stableId }) { file ->
-                        FileListRow(file, onClick = { selectedFile = file }, onFavorite = { viewModel.setFavorite(file, !file.favorite) })
+                        FileListRow(file, onClick = { if (com.teledrive.files.viewer.DefaultViewerRouter().route(file) !is com.teledrive.files.viewer.ViewerTarget.External) onOpenViewer(file.stableId, state.files.filter { com.teledrive.files.viewer.DefaultViewerRouter().route(it) == com.teledrive.files.viewer.ViewerTarget.InAppImage }.map { it.stableId }) else selectedFile = file }, onFavorite = { viewModel.setFavorite(file, !file.favorite) })
                     }
                 }
             }
@@ -314,7 +306,7 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
             folders = state.folders,
             onFavorite = { viewModel.setFavorite(file, !file.favorite); selectedFile = null },
             onMove = { folderId -> viewModel.moveFile(file, folderId); selectedFile = null },
-            onPreview = { previewFile = file; selectedFile = null },
+            onPreview = { onOpenViewer(file.stableId, state.files.filter { com.teledrive.files.viewer.DefaultViewerRouter().route(it) == com.teledrive.files.viewer.ViewerTarget.InAppImage }.map { it.stableId }); selectedFile = null },
             onOpen = { viewModel.open(file); selectedFile = null },
             onShare = { viewModel.open(file, share = true); selectedFile = null },
             onDownload = { viewModel.download(file); selectedFile = null },
@@ -322,9 +314,6 @@ fun FileBrowserScreen(viewModel: FileLibraryViewModel = hiltViewModel()) {
             onRemoveLocal = { viewModel.deleteLocalCopy(file); selectedFile = null },
             onDeleteRemote = { confirmRemoteDelete = file; selectedFile = null },
         )
-    }
-    previewFile?.let { file ->
-        FilePreviewDialog(file = file, onDismiss = { previewFile = null })
     }
     confirmRemoteDelete?.let { file ->
         AlertDialog(
@@ -403,41 +392,6 @@ private fun FileKindIcon(kind: FileKind, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FilePreviewDialog(file: StoredFile, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    val safePath = file.localPath?.let { managedPathOrNull(context, it) }
-    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(initialValue = null, key1 = safePath) {
-        value = withContext(Dispatchers.IO) { safePath?.let(::decodePreviewBitmap) }
-    }
-    val text by produceState<String?>(initialValue = null, key1 = safePath) {
-        value = if (file.mimeType?.startsWith("text/") == true && safePath != null) {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    File(safePath).inputStream().use { input ->
-                        val buffer = ByteArray(200_000)
-                        val count = input.read(buffer)
-                        if (count <= 0) "" else buffer.copyOf(count).decodeToString()
-                    }
-                }.getOrNull()
-            }
-        } else null
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(file.originalFilename) },
-        text = {
-            when {
-                safePath == null -> Text("The managed local copy is unavailable. Download the file again before previewing it.")
-                bitmap != null -> Image(bitmap = bitmap!!, contentDescription = file.originalFilename, modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp), contentScale = ContentScale.Fit)
-                text != null -> Text(text!!, modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()))
-                else -> Text(file.previewFallbackDescription())
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
-}
-
-@Composable
 private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss: () -> Unit, onFavorite: () -> Unit, onMove: (String?) -> Unit, onPreview: () -> Unit, onOpen: () -> Unit, onShare: () -> Unit, onDownload: () -> Unit, onExport: () -> Unit, onRemoveLocal: () -> Unit, onDeleteRemote: () -> Unit) {
     var moveMenuExpanded by remember { mutableStateOf(false) }
     AlertDialog(
@@ -459,8 +413,8 @@ private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (file.localAvailability == LocalAvailability.AVAILABLE && file.isPreviewable()) TextButton(onClick = onPreview) { Text("Preview") }
-                    TextButton(onClick = onOpen) { Text(if (file.localAvailability == LocalAvailability.AVAILABLE) "Open" else "Download and open") }
+                    if (file.localAvailability == LocalAvailability.AVAILABLE && (file.kind in setOf(FileKind.IMAGE, FileKind.VIDEO, FileKind.AUDIO) || file.mimeType?.startsWith("text/") == true || file.mimeType == "application/pdf")) TextButton(onClick = onPreview) { Text("Open in app") }
+                    TextButton(onClick = onOpen) { Text(if (file.localAvailability == LocalAvailability.AVAILABLE) "Open with another app" else "Download and open with another app") }
                     TextButton(onClick = onShare) { Text(if (file.localAvailability == LocalAvailability.AVAILABLE) "Share" else "Download and share") }
                 }
             }
@@ -485,30 +439,6 @@ private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss
     )
 }
 
-private fun managedPathOrNull(context: android.content.Context, path: String): String? {
-    val root = runCatching { context.filesDir.resolve("downloads").canonicalFile }.getOrNull() ?: return null
-    val file = runCatching { File(path).canonicalFile }.getOrNull() ?: return null
-    return file.takeIf { it.isFile && it.path.startsWith(root.path + File.separator) }?.absolutePath
-}
-
-private fun decodePreviewBitmap(path: String): androidx.compose.ui.graphics.ImageBitmap? {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(path, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    var sample = 1
-    while (bounds.outWidth / sample > 2048 || bounds.outHeight / sample > 2048) sample *= 2
-    val options = BitmapFactory.Options().apply { inSampleSize = sample }
-    return BitmapFactory.decodeFile(path, options)?.asImageBitmap()
-}
-
-private fun StoredFile.previewFallbackDescription(): String = when {
-    mimeType == "application/pdf" -> "PDF preview is delegated to an installed Android PDF viewer. Use Open to launch it through a private content URI."
-    mimeType?.startsWith("audio/") == true -> "Audio playback is delegated to an installed Android audio player. Use Open to launch it through a private content URI."
-    mimeType?.startsWith("video/") == true -> "Video playback is delegated to an installed Android video player. Use Open to launch it through a private content URI."
-    else -> "This file has no built-in preview. Use Open to choose a compatible Android app."
-}
-
-private fun StoredFile.isPreviewable(): Boolean = kind == FileKind.IMAGE || mimeType?.startsWith("text/") == true
 private fun FileKind.label(): String = name.lowercase().replaceFirstChar { it.uppercase() }
 private fun SortField.label(): String = name.lowercase().replaceFirstChar { it.uppercase() }
 private fun Long?.formatBytes(): String = when {
