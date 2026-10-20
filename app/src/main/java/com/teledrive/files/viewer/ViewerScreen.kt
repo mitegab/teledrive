@@ -173,6 +173,8 @@ private fun decodeAnimated(path: String): Drawable? {
 
 @Composable
 private fun ColumnScope.MediaViewer(path: String, video: Boolean, title: String, openExternal: () -> Unit, export: () -> Unit) {
+    // Legacy in-app viewer kept for backward compatibility; new Video/Audio players are preferred.
+    // Orientation is now user-controlled; no forced landscape.
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     var failure by remember(path) { mutableStateOf<String?>(null) }
@@ -191,16 +193,12 @@ private fun ColumnScope.MediaViewer(path: String, video: Boolean, title: String,
             })
         }
     }
-    DisposableEffect(player, lifecycle, video) {
-        val activity = context as? android.app.Activity
-        val oldOrientation = activity?.requestedOrientation
-        if (video) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    DisposableEffect(player, lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE) player.pause() }
         lifecycle.lifecycle.addObserver(observer)
         onDispose {
             lifecycle.lifecycle.removeObserver(observer)
-            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            if (oldOrientation != null) activity?.requestedOrientation = oldOrientation
+            (context as? android.app.Activity)?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             player.release()
         }
     }
