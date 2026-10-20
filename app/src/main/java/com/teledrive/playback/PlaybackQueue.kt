@@ -88,8 +88,15 @@ class PlaybackQueue @Inject constructor() {
                 val order = current.shuffledOrder
                 if (order.isEmpty()) return null
                 val pos = order.indexOf(current.currentIndex)
-                if (pos == -1) order.firstOrNull()?.let { return current.items.getOrNull(it) } else if (pos + 1 < order.size) order[pos + 1] else if (current.repeatMode == RepeatMode.ALL) order.first() else return null
-                order[pos + 1]
+                if (pos == -1) {
+                    order.firstOrNull() ?: return null
+                } else if (pos + 1 < order.size) {
+                    order[pos + 1]
+                } else if (current.repeatMode == RepeatMode.ALL) {
+                    order.first()
+                } else {
+                    return null
+                }
             }
             current.currentIndex + 1 < current.items.size -> current.currentIndex + 1
             current.repeatMode == RepeatMode.ALL -> 0
@@ -105,8 +112,15 @@ class PlaybackQueue @Inject constructor() {
         val prevIndex = when {
             current.shuffleMode == ShuffleMode.ON -> {
                 val order = current.shuffledOrder
+                if (order.isEmpty()) return null
                 val pos = order.indexOf(current.currentIndex)
-                if (pos <= 0) return if (current.repeatMode == RepeatMode.ALL) order.lastOrNull()?.let { current.items.getOrNull(it); it } else null else order[pos - 1]
+                if (pos > 0) {
+                    order[pos - 1]
+                } else if (current.repeatMode == RepeatMode.ALL) {
+                    order.lastOrNull() ?: return null
+                } else {
+                    return null
+                }
             }
             current.currentIndex > 0 -> current.currentIndex - 1
             current.repeatMode == RepeatMode.ALL -> current.items.size - 1

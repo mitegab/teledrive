@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 
 private val speedOptions = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun VideoPlayerScreen(
     stableId: String,
@@ -377,7 +378,7 @@ fun VideoPlayerScreen(
                             }.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            RadioButton(selected = player.trackSelectionParameters.isTrackTypeDisabled(C.TRACK_TYPE_TEXT), onClick = null)
+                            RadioButton(selected = player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT), onClick = null)
                             Spacer(Modifier.width(8.dp)); Text("Off")
                         }
                         tracks.forEach { group ->
