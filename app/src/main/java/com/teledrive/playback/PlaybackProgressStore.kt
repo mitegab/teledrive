@@ -3,7 +3,6 @@ package com.teledrive.playback
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -51,6 +50,6 @@ class PlaybackProgressStore @Inject constructor(
         }
     }
 
-    private fun posKey(id: String) = "pos_$id"
-    private fun durKey(id: String) = "dur_$id"
+    private fun posKey(id: String) = "pos_${id.replace(":", "_")}"
+    private fun durKey(id: String) = "dur_${id.replace(":", "_")}"
 }
