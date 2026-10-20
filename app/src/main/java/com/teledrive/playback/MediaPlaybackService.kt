@@ -1,11 +1,10 @@
 package com.teledrive.playback
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
-import androidx.core.app.NotificationCompat
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import dagger.hilt.android.AndroidEntryPoint
@@ -21,6 +20,7 @@ class MediaPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        setMediaNotificationProvider(DefaultMediaNotificationProvider(this))
         // Ensure controller's session is used if available
         mediaSession = playbackController.getSession() ?: run {
             val player = playbackController.getPlayer()
