@@ -31,8 +31,10 @@ import com.teledrive.playback.PlaybackStatus
 import com.teledrive.playback.RepeatMode
 import com.teledrive.playback.ShuffleMode
 
+import androidx.compose.material3.ExperimentalMaterial3Api
 private val speedOptions = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioPlayerScreen(
     onBack: () -> Unit,
