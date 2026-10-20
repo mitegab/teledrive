@@ -120,6 +120,17 @@ class PlaybackController @Inject constructor(
     fun getPlayer(): ExoPlayer = ensurePlayer()
     fun getSession(): MediaSession? = mediaSession
 
+    private fun ensureService() {
+        try {
+            val intent = android.content.Intent(context, MediaPlaybackService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (_: Exception) { /* service may not be needed if player handles it */ }
+    }
+
     suspend fun playSingle(stableId: String, allIds: List<String> = emptyList()) {
         _uiState.update { it.copy(status = PlaybackStatus.RESOLVING, availability = MediaAvailability.REMOTE_ONLY, error = null, downloadProgress = null) }
         // Build queue if needed
@@ -206,6 +217,7 @@ class PlaybackController @Inject constructor(
     private suspend fun prepareAndPlay(item: PlaybackItem) {
         withContext(Dispatchers.Main) {
             val exo = ensurePlayer()
+            ensureService()
             _uiState.update { it.copy(status = PlaybackStatus.PREPARING, error = null) }
             val file = File(item.localPath)
             if (!file.exists()) {
