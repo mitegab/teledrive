@@ -90,14 +90,20 @@ data class FileQuery(
 object FileKindDetector {
     private val archiveExtensions = setOf("zip", "rar", "7z", "tar", "gz", "bz2", "xz", "tgz")
     private val textExtensions = setOf("txt", "md", "csv", "json", "xml", "yaml", "yml", "log", "html", "htm")
+    private val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif", "avif", "tiff", "tif", "svg", "ico")
+    private val videoExtensions = setOf("mp4", "m4v", "mkv", "webm", "mov", "3gp", "avi", "flv", "wmv", "mts", "m2ts", "ts", "hevc", "mpg", "mpeg", "3g2", "f4v")
+    private val audioExtensions = setOf("mp3", "m4a", "aac", "wav", "flac", "ogg", "oga", "opus", "wma", "aiff", "aif", "amr", "3ga", "mka", "mid", "midi", "weba")
 
     fun detect(filename: String?, mimeType: String?): FileKind {
         val mime = mimeType.orEmpty().trim().lowercase()
         val extension = filename.orEmpty().substringAfterLast('.', "").lowercase()
+        val genericMime = mime.isBlank() || mime in setOf("application/octet-stream", "binary/octet-stream", "*/*")
         return when {
             mime.startsWith("image/") -> FileKind.IMAGE
             mime.startsWith("video/") -> FileKind.VIDEO
             mime.startsWith("audio/") -> FileKind.AUDIO
+            // Some Telegram audio is served as application/ogg
+            mime in setOf("application/ogg", "application/x-ogg") -> FileKind.AUDIO
             mime.startsWith("text/") -> FileKind.TEXT
             mime == "application/pdf" -> FileKind.DOCUMENT
             mime in setOf(
@@ -107,11 +113,34 @@ object FileKindDetector {
                 "application/gzip",
                 "application/x-tar",
             ) -> FileKind.ARCHIVE
+            !genericMime && mime in setOf("audio/mpeg", "audio/mp4", "audio/ogg", "audio/opus", "audio/flac", "audio/wav", "audio/x-wav", "audio/aac", "audio/webm") -> FileKind.AUDIO
+            !genericMime && mime in setOf("video/mp4", "video/webm", "video/x-matroska", "video/quicktime", "video/avi", "video/x-msvideo", "video/3gpp") -> FileKind.VIDEO
+            extension in imageExtensions -> FileKind.IMAGE
+            extension in videoExtensions -> FileKind.VIDEO
+            extension in audioExtensions -> FileKind.AUDIO
             extension in archiveExtensions -> FileKind.ARCHIVE
             extension in textExtensions -> FileKind.TEXT
             else -> FileKind.DOCUMENT
         }
     }
+
+    fun isMediaKind(kind: FileKind): Boolean = kind == FileKind.VIDEO || kind == FileKind.AUDIO
+}
+
+object MediaSupport {
+    private val supportedAudioMimes = setOf(
+        "audio/mpeg", "audio/mp3", "audio/mp4", "audio/m4a", "audio/aac",
+        "audio/ogg", "audio/opus", "audio/vorbis", "audio/flac", "audio/wav",
+        "audio/x-wav", "audio/webm", "audio/aacp", "application/ogg"
+    )
+    private val supportedVideoMimes = setOf(
+        "video/mp4", "video/webm", "video/x-matroska", "video/quicktime",
+        "video/avi", "video/x-msvideo", "video/3gpp", "video/3gpp2",
+        "video/mpeg", "video/mp2t"
+    )
+
+    fun isAudioMime(mime: String?): Boolean = mime?.lowercase()?.let { it in supportedAudioMimes || it.startsWith("audio/") } == true
+    fun isVideoMime(mime: String?): Boolean = mime?.lowercase()?.let { it in supportedVideoMimes || it.startsWith("video/") } == true
 }
 
 object FilenameRules {
