@@ -42,6 +42,8 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Sort
@@ -93,11 +95,19 @@ import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.SortDirection
 import com.teledrive.core.model.SortField
 import com.teledrive.core.model.StoredFile
+import com.teledrive.playback.MediaPlayerViewModel
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun FileBrowserScreen(onOpenViewer: (String, List<String>) -> Unit = { _, _ -> }, viewModel: FileLibraryViewModel = hiltViewModel()) {
+fun FileBrowserScreen(
+    onOpenViewer: (String, List<String>) -> Unit = { _, _ -> },
+    onOpenVideo: (String, List<String>) -> Unit = { id, ids -> onOpenViewer(id, ids) },
+    onOpenAudio: (String, List<String>) -> Unit = { id, ids -> onOpenViewer(id, ids) },
+    viewModel: FileLibraryViewModel = hiltViewModel(),
+    playerViewModel: MediaPlayerViewModel = hiltViewModel()
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val playerState by playerViewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var selectedFile by remember { mutableStateOf<StoredFile?>(null) }
     var showFilterMenu by rememberSaveable { mutableStateOf(false) }
@@ -121,6 +131,22 @@ fun FileBrowserScreen(onOpenViewer: (String, List<String>) -> Unit = { _, _ -> }
         uris.forEach { uri ->
             runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
             viewModel.upload(uri)
+        }
+    }
+
+    fun handleOpen(file: StoredFile) {
+        val router = com.teledrive.files.viewer.DefaultViewerRouter().route(file)
+        val mediaIds = state.files.filter { it.kind == FileKind.VIDEO || it.kind == FileKind.AUDIO }.map { it.stableId }
+        val imageIds = state.files.filter { com.teledrive.files.viewer.DefaultViewerRouter().route(it) == com.teledrive.files.viewer.ViewerTarget.InAppImage }.map { it.stableId }
+        when (router) {
+            is com.teledrive.files.viewer.ViewerTarget.InAppImage -> onOpenViewer(file.stableId, imageIds)
+            is com.teledrive.files.viewer.ViewerTarget.InAppVideo -> onOpenVideo(file.stableId, mediaIds.ifEmpty { listOf(file.stableId) })
+            is com.teledrive.files.viewer.ViewerTarget.InAppAudio -> {
+                // Audio uses same VideoPlayerScreen route but AudioPlayerScreen can also be opened via queue
+                // Use video route for unified queue handling, but also allow audio-specific screen after playback starts
+                onOpenAudio(file.stableId, mediaIds.ifEmpty { listOf(file.stableId) })
+            }
+            else -> selectedFile = file
         }
     }
 
@@ -212,13 +238,15 @@ fun FileBrowserScreen(onOpenViewer: (String, List<String>) -> Unit = { _, _ -> }
             } else if (state.isGrid) {
                 LazyVerticalGrid(columns = GridCells.Adaptive(150.dp), contentPadding = PaddingValues(bottom = 100.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(state.files, key = { it.stableId }) { file ->
-                        FileGridCard(file, onClick = { if (com.teledrive.files.viewer.DefaultViewerRouter().route(file) !is com.teledrive.files.viewer.ViewerTarget.External) onOpenViewer(file.stableId, state.files.filter { com.teledrive.files.viewer.DefaultViewerRouter().route(it) == com.teledrive.files.viewer.ViewerTarget.InAppImage }.map { it.stableId }) else selectedFile = file }, onFavorite = { viewModel.setFavorite(file, !file.favorite) })
+                        val isPlaying = playerState.queue.currentItem?.file?.stableId == file.stableId
+                        FileGridCard(file, isPlaying = isPlaying, onClick = { handleOpen(file) }, onFavorite = { viewModel.setFavorite(file, !file.favorite) })
                     }
                 }
             } else {
                 LazyColumn(contentPadding = PaddingValues(bottom = 100.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(state.files, key = { it.stableId }) { file ->
-                        FileListRow(file, onClick = { if (com.teledrive.files.viewer.DefaultViewerRouter().route(file) !is com.teledrive.files.viewer.ViewerTarget.External) onOpenViewer(file.stableId, state.files.filter { com.teledrive.files.viewer.DefaultViewerRouter().route(it) == com.teledrive.files.viewer.ViewerTarget.InAppImage }.map { it.stableId }) else selectedFile = file }, onFavorite = { viewModel.setFavorite(file, !file.favorite) })
+                        val isPlaying = playerState.queue.currentItem?.file?.stableId == file.stableId
+                        FileListRow(file, isPlaying = isPlaying, onClick = { handleOpen(file) }, onFavorite = { viewModel.setFavorite(file, !file.favorite) })
                     }
                 }
             }
@@ -306,13 +334,35 @@ fun FileBrowserScreen(onOpenViewer: (String, List<String>) -> Unit = { _, _ -> }
             folders = state.folders,
             onFavorite = { viewModel.setFavorite(file, !file.favorite); selectedFile = null },
             onMove = { folderId -> viewModel.moveFile(file, folderId); selectedFile = null },
-            onPreview = { onOpenViewer(file.stableId, state.files.filter { com.teledrive.files.viewer.DefaultViewerRouter().route(it) == com.teledrive.files.viewer.ViewerTarget.InAppImage }.map { it.stableId }); selectedFile = null },
+            onPreview = {
+                val router = com.teledrive.files.viewer.DefaultViewerRouter().route(file)
+                when (router) {
+                    is com.teledrive.files.viewer.ViewerTarget.InAppImage -> onOpenViewer(file.stableId, state.files.filter { com.teledrive.files.viewer.DefaultViewerRouter().route(it) == com.teledrive.files.viewer.ViewerTarget.InAppImage }.map { it.stableId })
+                    is com.teledrive.files.viewer.ViewerTarget.InAppVideo -> onOpenVideo(file.stableId, state.files.filter { it.kind == FileKind.VIDEO || it.kind == FileKind.AUDIO }.map { it.stableId })
+                    is com.teledrive.files.viewer.ViewerTarget.InAppAudio -> onOpenAudio(file.stableId, state.files.filter { it.kind == FileKind.VIDEO || it.kind == FileKind.AUDIO }.map { it.stableId })
+                    else -> {}
+                }
+                selectedFile = null
+            },
             onOpen = { viewModel.open(file); selectedFile = null },
             onShare = { viewModel.open(file, share = true); selectedFile = null },
             onDownload = { viewModel.download(file); selectedFile = null },
             onExport = { exportFile = file; selectedFile = null; exportPicker.launch(file.originalFilename) },
             onRemoveLocal = { viewModel.deleteLocalCopy(file); selectedFile = null },
             onDeleteRemote = { confirmRemoteDelete = file; selectedFile = null },
+            onPlayNow = {
+                val mediaIds = state.files.filter { it.kind == FileKind.VIDEO || it.kind == FileKind.AUDIO }.map { it.stableId }
+                if (file.kind == FileKind.VIDEO) onOpenVideo(file.stableId, mediaIds) else onOpenAudio(file.stableId, mediaIds)
+                selectedFile = null
+            },
+            onAddToQueue = {
+                playerViewModel.addToQueue(file.stableId, false)
+                selectedFile = null
+            },
+            onPlayNext = {
+                playerViewModel.addToQueue(file.stableId, true)
+                selectedFile = null
+            },
         )
     }
     confirmRemoteDelete?.let { file ->
@@ -349,15 +399,24 @@ private fun EmptySearchState() {
 }
 
 @Composable
-private fun FileListRow(file: StoredFile, onClick: () -> Unit, onFavorite: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(18.dp)) {
+private fun FileListRow(file: StoredFile, isPlaying: Boolean = false, onClick: () -> Unit, onFavorite: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = if (isPlaying) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)) {
         Row(modifier = Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            FileKindIcon(file.kind, Modifier.size(38.dp))
+            FileKindIcon(file.kind, Modifier.size(38.dp), isPlaying)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(file.originalFilename, maxLines = 1, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(file.originalFilename, maxLines = 1, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f, fill = false))
+                    if (isPlaying) {
+                        Icon(Icons.Rounded.PlayArrow, contentDescription = "Now playing", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
                 Text("${file.kind.label()} · ${file.sizeBytes.formatBytes()} · ${file.savedAtEpochSeconds.formatDate()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (file.localAvailability == LocalAvailability.AVAILABLE) Text("Available offline", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                if (file.remoteAvailability == RemoteAvailability.DELETED) Text("Remote file unavailable", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (file.localAvailability == LocalAvailability.AVAILABLE) Text("Available offline", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    else if (file.localAvailability == LocalAvailability.DOWNLOADING) Text("Downloading…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                    if (file.remoteAvailability == RemoteAvailability.DELETED) Text("Remote file unavailable", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    if (file.tdlibFileId == null) Text("Not downloadable", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                }
             }
             IconButton(onClick = onFavorite) { Icon(if (file.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, contentDescription = if (file.favorite) "Remove favorite" else "Add favorite") }
         }
@@ -365,21 +424,25 @@ private fun FileListRow(file: StoredFile, onClick: () -> Unit, onFavorite: () ->
 }
 
 @Composable
-private fun FileGridCard(file: StoredFile, onClick: () -> Unit, onFavorite: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(20.dp)) {
+private fun FileGridCard(file: StoredFile, isPlaying: Boolean = false, onClick: () -> Unit, onFavorite: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = if (isPlaying) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                FileKindIcon(file.kind, Modifier.size(34.dp))
+                FileKindIcon(file.kind, Modifier.size(34.dp), isPlaying)
                 IconButton(onClick = onFavorite, modifier = Modifier.size(32.dp)) { Icon(if (file.favorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, contentDescription = "Favorite") }
             }
             Text(file.originalFilename, maxLines = 2, minLines = 2, style = MaterialTheme.typography.titleSmall)
             Text(file.sizeBytes.formatBytes(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (isPlaying) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("Now playing", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
         }
     }
 }
 
 @Composable
-private fun FileKindIcon(kind: FileKind, modifier: Modifier = Modifier) {
+private fun FileKindIcon(kind: FileKind, modifier: Modifier = Modifier, isPlaying: Boolean = false) {
     val (icon, tint) = when (kind) {
         FileKind.IMAGE -> Icons.Rounded.Image to MaterialTheme.colorScheme.primary
         FileKind.VIDEO -> Icons.Rounded.Movie to MaterialTheme.colorScheme.tertiary
@@ -388,11 +451,28 @@ private fun FileKindIcon(kind: FileKind, modifier: Modifier = Modifier) {
         FileKind.TEXT -> Icons.Rounded.Description to MaterialTheme.colorScheme.primary
         else -> Icons.Rounded.Description to MaterialTheme.colorScheme.onSurfaceVariant
     }
-    Surface(modifier = modifier, shape = RoundedCornerShape(12.dp), color = tint.copy(alpha = .14f)) { Icon(icon, contentDescription = null, modifier = Modifier.padding(8.dp), tint = tint) }
+    val bg = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else tint.copy(alpha = .14f)
+    Surface(modifier = modifier, shape = RoundedCornerShape(12.dp), color = bg) { Icon(icon, contentDescription = null, modifier = Modifier.padding(8.dp), tint = tint) }
 }
 
 @Composable
-private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss: () -> Unit, onFavorite: () -> Unit, onMove: (String?) -> Unit, onPreview: () -> Unit, onOpen: () -> Unit, onShare: () -> Unit, onDownload: () -> Unit, onExport: () -> Unit, onRemoveLocal: () -> Unit, onDeleteRemote: () -> Unit) {
+private fun FileDetailsDialog(
+    file: StoredFile,
+    folders: List<Folder>,
+    onDismiss: () -> Unit,
+    onFavorite: () -> Unit,
+    onMove: (String?) -> Unit,
+    onPreview: () -> Unit,
+    onOpen: () -> Unit,
+    onShare: () -> Unit,
+    onDownload: () -> Unit,
+    onExport: () -> Unit,
+    onRemoveLocal: () -> Unit,
+    onDeleteRemote: () -> Unit,
+    onPlayNow: () -> Unit = {},
+    onAddToQueue: () -> Unit = {},
+    onPlayNext: () -> Unit = {},
+) {
     var moveMenuExpanded by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -403,6 +483,13 @@ private fun FileDetailsDialog(file: StoredFile, folders: List<Folder>, onDismiss
                 Text("Saved ${file.savedAtEpochSeconds.formatDate()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(if (file.localAvailability == LocalAvailability.AVAILABLE) "A local cached copy is available." else "No local cached copy.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Remote message: ${file.remote.value}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (file.kind == FileKind.VIDEO || file.kind == FileKind.AUDIO) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onPlayNow) { Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Play") }
+                        TextButton(onClick = onAddToQueue) { Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(4.dp)); Text("Add to queue") }
+                        TextButton(onClick = onPlayNext) { Text("Play next") }
+                    }
+                }
                 Box {
                     TextButton(onClick = { moveMenuExpanded = true }) { Text("Move to folder") }
                     DropdownMenu(expanded = moveMenuExpanded, onDismissRequest = { moveMenuExpanded = false }) {
