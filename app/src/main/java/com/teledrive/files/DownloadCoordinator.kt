@@ -517,6 +517,23 @@ class DownloadCoordinator @Inject constructor(
                     expectedSizeBytes = result.sizeBytes ?: file.sizeBytes,
                 )
                 val finalSize = result.sizeBytes ?: file.sizeBytes
+                // The published copy must be readable and match the expected size before the
+                // database advertises it; a half-copied file is removed, never completed.
+                val published = localStorage.probe(managedPath, finalSize)
+                if (!published.exists || !published.readable || published.sizeBytes == null ||
+                    (finalSize != null && published.sizeBytes != finalSize)
+                ) {
+                    localStorage.remove(managedPath)
+                    TeleDriveLog.d("download.verify_failed", "stable_id" to stableIdTail(stableId))
+                    throw DownloadException(
+                        AppError(
+                            category = ErrorCategory.CORRUPT_FILE,
+                            operation = ErrorOperation.DOWNLOAD,
+                            userMessage = "The downloaded file could not be verified. Try downloading it again.",
+                            retryable = true,
+                        ),
+                    )
+                }
                 offline.markAvailable(file, managedPath, finalSize, System.currentTimeMillis() / 1000)
 
                 val completed = verifying.copy(
