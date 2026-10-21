@@ -296,14 +296,12 @@ class TdLibJsonGateway(
         try {
             val file = request(TdLibRequests.downloadFile(request.tdlibFileId, priority = 32, offset = 0, limit = 0, synchronous = false))
             if (file.completedDownload()) {
-                val path = file.safeObject("local")?.optString("path")?.takeIf { it.isNotBlank() }
-                    ?: throw StorageGatewayException("DOWNLOAD_PATH_MISSING", "Telegram completed the download without a local path", false)
+                val path = resolveDownloadedPath(file, request.tdlibFileId)
                 emitTransfer(request.transferId, file.downloadedBytes(), request.expectedSizeBytes, TransferState.COMPLETED, request.remote, request.tdlibFileId)
                 return DownloadResult(request.transferId, request.remote, path, request.expectedSizeBytes)
             }
             val completed = withTimeout(30.minutes) { waiter.await() }
-            val path = completed.safeObject("local")?.optString("path")?.takeIf { it.isNotBlank() }
-                ?: throw StorageGatewayException("DOWNLOAD_PATH_MISSING", "Telegram completed the download without a local path", false)
+            val path = resolveDownloadedPath(completed, request.tdlibFileId)
             return DownloadResult(request.transferId, request.remote, path, request.expectedSizeBytes)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -317,6 +315,29 @@ class TdLibJsonGateway(
             transferDirections.remove(request.transferId.value)
             transferTotals.remove(request.transferId.value)
         }
+    }
+
+    /**
+     * The path must come from TDLib's completed `local` object. Some completion updates arrive
+     * before (or without) the path, so ask for the file once more instead of discarding bytes
+     * that are already on disk — a missing path is a hand-off failure, never a network error.
+     */
+    private suspend fun resolveDownloadedPath(file: JSONObject, fileId: Int): String {
+        file.downloadedPath()?.let { return it }
+        val refreshed = try {
+            request(TdLibRequests.getFile(fileId))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: StorageGatewayException) {
+            TeleDriveLog.d("tdlib.download_path_lookup_failed", "error_code" to error.code)
+            null
+        }
+        return refreshed?.downloadedPath()
+            ?: throw StorageGatewayException(
+                "DOWNLOAD_PATH_MISSING",
+                "Telegram completed the download without a local path",
+                false,
+            )
     }
 
     override suspend fun cancelTransfer(transferId: TransferId, direction: TransferDirection, tdlibFileId: Int?) {
