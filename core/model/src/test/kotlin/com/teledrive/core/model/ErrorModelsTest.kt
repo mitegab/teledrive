@@ -30,6 +30,19 @@ class ErrorModelsTest {
     }
 
     @Test
+    fun floodWaitDelayIsParsedFromTdlibsNaturalMessage() {
+        // This is the exact form TDLib returns, with the mapped code losing the digits.
+        val error = AppErrorMapper.fromCode("FLOOD_WAIT", "Too Many Requests: retry after 45", ErrorOperation.UPLOAD)
+        assertEquals(ErrorCategory.RATE_LIMITED, error.category)
+        assertTrue(error.retryable)
+        assertEquals(45L, error.retryAfterSeconds)
+
+        val underscored = AppErrorMapper.fromCode("FLOOD_WAIT", "FLOOD WAIT 12", ErrorOperation.DOWNLOAD)
+        assertEquals(12L, underscored.retryAfterSeconds)
+        assertEquals(null, AppErrorMapper.requestedDelaySeconds("FLOOD_WAIT", "Too many requests"))
+    }
+
+    @Test
     fun authenticationFailuresAreNotNetworkRetries() {
         listOf("AUTHENTICATION_ERROR", "SESSION_REVOKED", "AUTH_KEY_UNREGISTERED").forEach { code ->
             val error = AppErrorMapper.fromCode(code, "Unauthorized", ErrorOperation.LISTING, retryableHint = true)
