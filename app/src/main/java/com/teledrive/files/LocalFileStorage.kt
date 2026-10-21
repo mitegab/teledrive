@@ -63,8 +63,16 @@ fun LocalStorageException.toAppError(operation: ErrorOperation): AppError = when
         retryable = false,
         diagnosticCode = failure.name,
     )
-    LocalStorageFailure.WRITE_FAILED, LocalStorageFailure.PUBLISH_FAILED ->
-        AppErrorMapper.fromThrowable(this, operation, ErrorCategory.DOWNLOAD_FAILED, retryable = true)
+    // Writing or publishing the verified copy is a problem with this device's storage, not
+    // with Telegram. Reporting it as a download/connection failure sent users to the wrong fix.
+    LocalStorageFailure.WRITE_FAILED, LocalStorageFailure.PUBLISH_FAILED -> AppError(
+        category = ErrorCategory.LOCAL_FILE_INACCESSIBLE,
+        operation = operation,
+        userMessage = "TeleDrive couldn't save the downloaded file on this device. Check free space and try again.",
+        retryable = true,
+        diagnosticCode = failure.name,
+        diagnosticCause = AppErrorMapper.sanitizeCause(message),
+    )
 }
 
 /** App-private, durable copies separate from TDLib's own cache and from user-exported files. */
@@ -84,7 +92,9 @@ class LocalFileStorage @Inject constructor(
         if (!source.isFile) throw LocalStorageException(LocalStorageFailure.SOURCE_MISSING, "Telegram finished without a readable local file")
         if (!source.canRead()) throw LocalStorageException(LocalStorageFailure.SOURCE_UNREADABLE, "Telegram's local copy cannot be read")
         val sourceLength = source.length()
-        if (expectedSizeBytes != null && expectedSizeBytes >= 0L && sourceLength != expectedSizeBytes) {
+        // TDLib reports size = 0 when the size is still unknown, so only a positive expectation
+        // can disprove the bytes; a 0-byte source is rejected by the TRUNCATED check below.
+        if (expectedSizeBytes != null && expectedSizeBytes > 0L && sourceLength != expectedSizeBytes) {
             throw LocalStorageException(LocalStorageFailure.SIZE_MISMATCH, "The downloaded file size does not match Telegram metadata")
         }
         if (sourceLength <= 0L) throw LocalStorageException(LocalStorageFailure.TRUNCATED, "The downloaded file is empty")

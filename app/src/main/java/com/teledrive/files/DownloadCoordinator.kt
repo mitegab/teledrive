@@ -394,8 +394,21 @@ class DownloadCoordinator @Inject constructor(
 
         val remoteGone = file.remoteAvailability == RemoteAvailability.DELETED
         val fileId = file.tdlibFileId
-        if (remoteGone || fileId == null) {
+        if (remoteGone) {
             throw DownloadException(AppErrorMapper.fromCode("REMOTE_FILE_MISSING", null, ErrorOperation.DOWNLOAD))
+        }
+        if (fileId == null) {
+            // The row exists but has no Telegram file id: refreshing the library is the fix,
+            // and the remote message is not necessarily gone.
+            throw DownloadException(
+                AppError(
+                    category = ErrorCategory.DOWNLOAD_FAILED,
+                    operation = ErrorOperation.DOWNLOAD,
+                    userMessage = "Telegram didn't provide download details for this file. Refresh the library and try again.",
+                    retryable = false,
+                    diagnosticCode = "TDLIB_FILE_ID_MISSING",
+                ),
+            )
         }
 
         val freeBytes = localStorage.availableBytes()
@@ -510,18 +523,21 @@ class DownloadCoordinator @Inject constructor(
                 repository.updateTransfer(verifying)
                 statusStore.put(snapshotOf(verifying, file))
 
+                // TDLib uses 0 for "size not known yet"; that is not a size we can verify
+                // against and must not make a good file look damaged or empty.
+                val expectedSize = (result.sizeBytes ?: file.sizeBytes)?.takeIf { it > 0L }
                 val managedPath = localStorage.importCompleted(
                     sourcePath = result.localPath,
                     stableId = stableId,
                     displayName = file.originalFilename,
-                    expectedSizeBytes = result.sizeBytes ?: file.sizeBytes,
+                    expectedSizeBytes = expectedSize,
                 )
-                val finalSize = result.sizeBytes ?: file.sizeBytes
+                val published = localStorage.probe(managedPath, expectedSize)
                 // The published copy must be readable and match the expected size before the
                 // database advertises it; a half-copied file is removed, never completed.
-                val published = localStorage.probe(managedPath, finalSize)
-                if (!published.exists || !published.readable || published.sizeBytes == null ||
-                    (finalSize != null && published.sizeBytes != finalSize)
+                val verifiedSize = published.sizeBytes ?: 0L
+                if (!published.exists || !published.readable || verifiedSize <= 0L ||
+                    (expectedSize != null && verifiedSize != expectedSize)
                 ) {
                     localStorage.remove(managedPath)
                     TeleDriveLog.d("download.verify_failed", "stable_id" to stableIdTail(stableId))
@@ -534,22 +550,24 @@ class DownloadCoordinator @Inject constructor(
                         ),
                     )
                 }
-                offline.markAvailable(file, managedPath, finalSize, System.currentTimeMillis() / 1000)
+                // Store the measured size when Telegram's size is unknown, otherwise the
+                // persisted row could never satisfy the offline size check.
+                offline.markAvailable(file, managedPath, expectedSize ?: verifiedSize, System.currentTimeMillis() / 1000)
 
                 val completed = verifying.copy(
                     state = TransferState.COMPLETED,
-                    bytesTransferred = finalSize ?: observedBytes,
-                    totalBytes = finalSize ?: verifying.totalBytes,
+                    bytesTransferred = max(verifiedSize, observedBytes),
+                    totalBytes = expectedSize ?: verifying.totalBytes,
                     errorMessage = null,
                     retryAtEpochSeconds = null,
                 )
                 repository.updateTransfer(completed)
                 val updated = offline.current(file)
-                statusStore.put(snapshotOf(completed, updated).asCompleted(finalSize))
+                statusStore.put(snapshotOf(completed, updated).asCompleted(verifiedSize))
                 TeleDriveLog.d(
                     "download.done",
                     "stable_id" to stableIdTail(stableId),
-                    "bytes" to (finalSize ?: observedBytes),
+                    "bytes" to verifiedSize,
                     "attempt" to completed.attempt,
                 )
                 updated

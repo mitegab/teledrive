@@ -36,7 +36,7 @@ internal suspend fun awaitReadySession(
     } ?: authorizationState.value
     when (settled) {
         is AuthorizationState.Ready -> return
-        is AuthorizationState.Error -> throw StorageGatewayException("NOT_READY", settled.message, false)
+        is AuthorizationState.Error -> throw StorageGatewayException("AUTHENTICATION_ERROR", settled.message, false)
         is AuthorizationState.Closing,
         is AuthorizationState.Closed,
         is AuthorizationState.LoggingOut,
@@ -54,7 +54,7 @@ internal suspend fun awaitReadySession(
         is AuthorizationState.WaitingForRegistration,
         is AuthorizationState.WaitingForPremiumPurchase,
         -> throw StorageGatewayException(
-            "NOT_READY",
+            "NOT_AUTHENTICATED",
             "Log in to Telegram to continue",
             false,
         )

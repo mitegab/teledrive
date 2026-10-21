@@ -199,4 +199,8 @@ internal fun JSONObject.downloadedBytes(): Long = safeObject("local")?.optLong("
 
 internal fun JSONObject.completedDownload(): Boolean = safeObject("local")?.optBoolean("is_downloading_completed", false) == true
 
+/** Path of a completed TDLib download, or null when TDLib has not published one yet. */
+internal fun JSONObject.downloadedPath(): String? =
+    safeObject("local")?.optString("path")?.takeIf { it.isNotBlank() }
+
 internal fun JSONObject.completedUpload(): Boolean = safeObject("remote")?.optBoolean("is_uploading_completed", false) == true

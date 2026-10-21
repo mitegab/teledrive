@@ -266,7 +266,9 @@ class FileLibraryViewModel @Inject constructor(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                _state.update { it.copy(notice = UiNotice(error.toAppError(ErrorOperation.DOWNLOAD).userMessage, isError = true)) }
+                // The coordinator already knows why this failed; its sentence is the only
+                // honest one to show (storage, damaged bytes, session, expired link).
+                _state.update { it.copy(notice = UiNotice(error.toDownloadAppError().userMessage, isError = true)) }
             }
         }
     }
@@ -357,13 +359,23 @@ class FileLibraryViewModel @Inject constructor(
 
     fun open(file: StoredFile, share: Boolean = false) {
         viewModelScope.launch {
+            val available = try {
+                downloadCoordinator.download(file)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _state.update { it.copy(notice = UiNotice(error.toDownloadAppError().userMessage, isError = true)) }
+                return@launch
+            }
+            // Opening is a separate step: a missing handler or provider failure is not a
+            // failed download and must not be described as one.
             try {
-                val available = downloadCoordinator.download(file)
                 downloadCoordinator.launchLocalFile(available, share)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                _state.update { it.copy(notice = UiNotice(error.toAppError(ErrorOperation.DOWNLOAD).userMessage, isError = true)) }
+                TeleDriveLog.d("file.open_failed", "error" to error.message)
+                _state.update { it.copy(notice = UiNotice(localOpenFailure().userMessage, isError = true)) }
             }
         }
     }
@@ -394,10 +406,8 @@ class FileLibraryViewModel @Inject constructor(
                     it.copy(notice = UiNotice("Saved ${file.originalFilename} for offline use"))
                 }
                 cause is CancellationException -> Unit
-                else -> {
-                    val message = (cause as? DownloadException)?.error?.userMessage
-                        ?: cause.toAppError(ErrorOperation.DOWNLOAD).userMessage
-                    _state.update { it.copy(notice = UiNotice(message, isError = true)) }
+                else -> _state.update {
+                    it.copy(notice = UiNotice(cause.toDownloadAppError().userMessage, isError = true))
                 }
             }
         }
