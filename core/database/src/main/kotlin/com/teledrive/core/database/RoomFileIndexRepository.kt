@@ -66,6 +66,19 @@ class RoomFileIndexRepository(
 
     override suspend fun deleteLocalFile(remoteId: String) = files.clearLocalCopy(remoteId)
 
+    override suspend fun saveLocalCopy(
+        remoteId: String,
+        localPath: String,
+        sizeBytes: Long?,
+        offlineSinceEpochSeconds: Long,
+    ) {
+        files.saveLocalCopy(remoteId, localPath, sizeBytes, offlineSinceEpochSeconds)
+    }
+
+    override suspend fun clearAllLocalCopies(): Int = files.clearAllLocalCopies()
+
+    override suspend fun failInterruptedTransfers(message: String): Int = transfers.failInterrupted(message)
+
     override suspend fun setFolder(remoteId: String, folderId: String?) = files.setFolder(remoteId, folderId)
 
     override suspend fun setFavorite(remoteId: String, favorite: Boolean) = files.setFavorite(remoteId, favorite)

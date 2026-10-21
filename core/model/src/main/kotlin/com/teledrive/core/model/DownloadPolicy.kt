@@ -47,6 +47,33 @@ data class DownloadLimits(
     }
 }
 
+/**
+ * Selection rules for bulk downloads. Deduplication happens before the coordinator
+ * queues anything, so a multi-select can never create two transfers for one file.
+ */
+object DownloadBatchRules {
+    /** Files that can actually be fetched, in first-seen order, without duplicates. */
+    fun candidates(files: List<StoredFile>): List<StoredFile> {
+        val seen = HashSet<String>()
+        return files.filter { file ->
+            file.tdlibFileId != null &&
+                file.remoteAvailability != RemoteAvailability.DELETED &&
+                file.localPath == null &&
+                file.localAvailability != LocalAvailability.AVAILABLE &&
+                seen.add(file.stableId)
+        }
+    }
+
+    /** Files that already have verified bytes; reported separately so the UI stays honest. */
+    fun alreadyOffline(files: List<StoredFile>): List<StoredFile> =
+        files.distinctBy { it.stableId }.filter { it.localAvailability == LocalAvailability.AVAILABLE }
+
+    fun skipped(files: List<StoredFile>): List<StoredFile> =
+        files.distinctBy { it.stableId }.filter {
+            it.tdlibFileId == null || it.remoteAvailability == RemoteAvailability.DELETED
+        }
+}
+
 /** Smoothed transfer measurements exposed to the UI. */
 data class TransferSpeedSnapshot(
     val bytesPerSecond: Long? = null,

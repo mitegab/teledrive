@@ -23,6 +23,7 @@ fun StoredFileEntity.toDomain(): StoredFile = StoredFile(
     remoteAvailability = runCatching { RemoteAvailability.valueOf(remoteAvailability) }.getOrDefault(RemoteAvailability.UNKNOWN),
     localAvailability = runCatching { LocalAvailability.valueOf(localAvailability) }.getOrDefault(LocalAvailability.NOT_DOWNLOADED),
     localPath = localPath,
+    offlineSinceEpochSeconds = offlineSinceEpochSeconds,
 )
 
 fun StoredFile.toEntity(existing: StoredFileEntity? = null): StoredFileEntity = StoredFileEntity(
@@ -43,6 +44,7 @@ fun StoredFile.toEntity(existing: StoredFileEntity? = null): StoredFileEntity = 
         runCatching { LocalAvailability.valueOf(existing.localAvailability) }.getOrDefault(localAvailability).name
     } else localAvailability.name,
     localPath = localPath ?: existing?.localPath,
+    offlineSinceEpochSeconds = offlineSinceEpochSeconds ?: existing?.offlineSinceEpochSeconds,
 )
 
 fun FolderEntity.toDomain(): Folder = Folder(id, name, parentId, createdAtEpochSeconds, modifiedAtEpochSeconds)
