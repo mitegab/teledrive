@@ -12,4 +12,7 @@ class ActiveTransferRegistry @Inject constructor() {
     fun markActive(id: String) { active += id }
     fun clear(id: String) { active -= id }
     fun isActive(id: String): Boolean = id in active
+
+    /** Snapshot of in-process transfer ids; used to avoid settling a live transfer at startup. */
+    fun activeIds(): Set<String> = active.toSet()
 }

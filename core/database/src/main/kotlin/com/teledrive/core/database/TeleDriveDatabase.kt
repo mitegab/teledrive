@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [StoredFileEntity::class, FolderEntity::class, TransferEntity::class, SyncStateEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class TeleDriveDatabase : RoomDatabase() {
@@ -31,12 +31,18 @@ abstract class TeleDriveDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE stored_files ADD COLUMN offlineSinceEpochSeconds INTEGER")
+            }
+        }
+
         fun create(context: Context): TeleDriveDatabase = Room.databaseBuilder(
             context,
             TeleDriveDatabase::class.java,
             "teledrive.db",
         )
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()
     }

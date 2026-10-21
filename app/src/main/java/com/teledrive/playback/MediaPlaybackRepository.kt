@@ -40,8 +40,10 @@ class MediaPlaybackRepository @Inject constructor(
             return try {
                 val downloaded = downloads.download(resolved.file)
                 MediaResolution.Available(downloaded, downloaded.localPath ?: return MediaResolution.Unavailable(downloaded, "Download completed without a local path"))
-            } catch (e: Exception) {
-                MediaResolution.Unavailable(resolved.file, e.message ?: "Download failed")
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                MediaResolution.Unavailable(resolved.file, com.teledrive.core.domain.toAppError(error, com.teledrive.core.model.ErrorOperation.DOWNLOAD).userMessage)
             }
         }
         return resolved

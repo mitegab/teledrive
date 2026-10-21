@@ -3,6 +3,9 @@ package com.teledrive.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.teledrive.core.domain.FileIndexRepository
+import com.teledrive.core.domain.toAppError
+import com.teledrive.core.model.ErrorOperation
+import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.LocalFileStorage
 import com.teledrive.preferences.AppTheme
 import com.teledrive.preferences.PreferencesRepository
@@ -11,8 +14,8 @@ import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -30,6 +33,7 @@ class SettingsViewModel @Inject constructor(
     private val preferences: PreferencesRepository,
     private val repository: FileIndexRepository,
     private val localStorage: LocalFileStorage,
+    private val downloadCoordinator: DownloadCoordinator,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -40,31 +44,58 @@ class SettingsViewModel @Inject constructor(
                 .collect { (theme, syncMetadata) -> _state.update { it.copy(theme = theme, syncMetadata = syncMetadata) } }
         }
         viewModelScope.launch {
-            _state.update { it.copy(cacheUsageBytes = localStorage.storageUsageBytes()) }
+            repository.observeFiles().collect { files ->
+                _state.update { it.copy(cacheUsageBytes = files.sumOf { file -> file.sizeBytes?.takeIf { file.localPath != null } ?: 0L }) }
+            }
         }
     }
 
     fun setTheme(theme: AppTheme) {
-        viewModelScope.launch { runCatching { preferences.setTheme(theme) }.onFailure { showError(it) } }
+        viewModelScope.launch {
+            try {
+                preferences.setTheme(theme)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                showError(error)
+            }
+        }
     }
 
     fun setMetadataSync(enabled: Boolean) {
-        viewModelScope.launch { runCatching { preferences.setSyncMetadataEnabled(enabled) }.onFailure { showError(it) } }
+        viewModelScope.launch {
+            try {
+                preferences.setSyncMetadataEnabled(enabled)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                showError(error)
+            }
+        }
     }
 
     fun clearLocalCache() {
         if (_state.value.isClearingCache) return
         viewModelScope.launch {
             _state.update { it.copy(isClearingCache = true, cacheCleared = false, errorMessage = null) }
-            runCatching {
-                repository.observeFiles().first().forEach { file ->
-                    localStorage.remove(file.localPath)
-                    repository.deleteLocalFile(file.stableId)
+            try {
+                // Stop in-flight writers first so they cannot recreate a copy mid-clear.
+                downloadCoordinator.cancelAllNow()
+                val cleared = repository.clearAllLocalCopies()
+                val bytesFreed = localStorage.clearManagedFiles()
+                _state.update {
+                    it.copy(
+                        isClearingCache = false,
+                        cacheCleared = true,
+                        cacheUsageBytes = 0L,
+                        errorMessage = if (cleared == 0 && bytesFreed == 0L) "There were no offline copies to clear" else null,
+                    )
                 }
-            }.onSuccess {
-                _state.update { it.copy(isClearingCache = false, cacheCleared = true, cacheUsageBytes = 0L) }
-            }.onFailure { error ->
-                _state.update { it.copy(isClearingCache = false, errorMessage = error.message ?: "Local cache could not be cleared") }
+            } catch (cancelled: CancellationException) {
+                _state.update { it.copy(isClearingCache = false) }
+                throw cancelled
+            } catch (error: Exception) {
+                _state.update { it.copy(isClearingCache = false, errorMessage = error.toAppError(ErrorOperation.STORAGE).userMessage) }
             }
         }
     }
@@ -72,6 +103,6 @@ class SettingsViewModel @Inject constructor(
     fun clearMessage() = _state.update { it.copy(cacheCleared = false, errorMessage = null) }
 
     private fun showError(error: Throwable) {
-        _state.update { it.copy(errorMessage = error.message ?: "The setting could not be saved") }
+        _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.SETTINGS).userMessage) }
     }
 }
