@@ -1,10 +1,10 @@
 package com.teledrive.files
 
 import com.teledrive.core.domain.FileIndexRepository
-import com.teledrive.core.model.AppErrorMessages
-import com.teledrive.core.model.ErrorCategory
 import com.teledrive.core.model.LocalAvailability
 import com.teledrive.core.model.TeleDriveLog
+import com.teledrive.core.model.TransferState
+import com.teledrive.transfers.ActiveTransferRegistry
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -20,10 +20,25 @@ class StartupReconciler @Inject constructor(
     private val repository: FileIndexRepository,
     private val offline: OfflineFileRepository,
     private val localStorage: LocalFileStorage,
+    private val activeTransfers: ActiveTransferRegistry,
 ) {
     suspend fun reconcile(): Report = withContext(Dispatchers.IO) {
         // A process death leaves rows in QUEUED/RUNNING/VERIFYING that no coroutine owns.
-        val interrupted = repository.failInterruptedTransfers(AppErrorMessages.forCategory(ErrorCategory.DOWNLOAD_FAILED))
+        // Rows already owned by this process (a drain worker may start before the UI) are
+        // left alone; the message is direction-neutral because it covers uploads too.
+        val owned = activeTransfers.activeIds()
+        val interruptedRows = repository.observeTransfers().first()
+            .filter { it.state.isActive && it.id.value !in owned }
+        interruptedRows.forEach { row ->
+            repository.updateTransfer(
+                row.copy(
+                    state = TransferState.FAILED,
+                    errorMessage = "The transfer was interrupted when the app closed. Try again.",
+                    retryAtEpochSeconds = null,
+                ),
+            )
+        }
+        val interrupted = interruptedRows.size
         // Flags claiming an in-progress copy must not survive into the new process. The
         // filesystem sweep below clears them, this count is only for diagnostics.
         val staleFlags = repository.observeFiles().first().count {
