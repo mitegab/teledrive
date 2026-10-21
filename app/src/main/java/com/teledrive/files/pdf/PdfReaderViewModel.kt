@@ -177,7 +177,7 @@ class PdfReaderViewModel @Inject constructor(
                 downloads.download(stored)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 val message = (error as? com.teledrive.files.DownloadException)?.error?.userMessage
                     ?: error.toAppError(ErrorOperation.DOWNLOAD).userMessage
                 fail(message, canRetryDownload = true, canOpenExternal = false)
@@ -280,7 +280,7 @@ class PdfReaderViewModel @Inject constructor(
                 "This PDF is password protected and this Android version cannot unlock it in the app. Open it with another PDF app.",
                 canOpenExternal = true,
             )
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             TeleDriveLog.d("pdf.open_failed", "error" to error.message)
             fail(AppErrorMessages.forCategory(ErrorCategory.PDF_RENDERING_FAILED), canRetryDownload = true, canOpenExternal = true)
         }
@@ -362,7 +362,7 @@ class PdfReaderViewModel @Inject constructor(
                 insertBitmap(pageIndex, bitmap)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 TeleDriveLog.d("pdf.render_failed", "page" to pageIndex, "error" to error.message)
                 _state.update {
                     it.copy(pageErrors = it.pageErrors + (pageIndex to "This page could not be rendered. Try scrolling away and back."))
@@ -480,7 +480,7 @@ class PdfReaderViewModel @Inject constructor(
         persistScope.launch {
             try {
                 preferences.setPdfProgress(progress)
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 TeleDriveLog.d("pdf.progress_failed", "error" to error.message)
             }
         }
@@ -543,7 +543,7 @@ class PdfReaderViewModel @Inject constructor(
                 TeleDriveLog.d("pdf.search", "pages" to pages.size, "matches" to pages.sumOf { it.matchCount })
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 TeleDriveLog.d("pdf.search_failed", "error" to error.message)
                 _state.update {
                     it.copy(search = it.search.copy(isSearching = false, error = "Search stopped because the document became unreadable."))
@@ -579,7 +579,7 @@ class PdfReaderViewModel @Inject constructor(
                 fileOpenRouter.open(file, share)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update {
                     it.copy(notice = UiNotice(error.toAppError(ErrorOperation.STORAGE).userMessage, isError = true))
                 }
@@ -600,7 +600,7 @@ class PdfReaderViewModel @Inject constructor(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update {
                     it.copy(notice = UiNotice(error.toAppError(ErrorOperation.STORAGE).userMessage, isError = true))
                 }

@@ -137,7 +137,7 @@ class FileLibraryViewModel @Inject constructor(
             } catch (cancelled: CancellationException) {
                 _state.update { it.copy(isSyncing = false) }
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 val appError = error.toAppError(ErrorOperation.SYNC)
                 _state.update { it.copy(isSyncing = false, errorMessage = appError.userMessage) }
             }
@@ -151,7 +151,7 @@ class FileLibraryViewModel @Inject constructor(
                 _state.update { it.copy(notice = UiNotice("Upload queued")) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(notice = UiNotice(error.toAppError(ErrorOperation.UPLOAD).userMessage, isError = true)) }
             }
         }
@@ -180,7 +180,7 @@ class FileLibraryViewModel @Inject constructor(
                 appendMetadata(MetadataOperation.FavoriteFile(file.stableId, favorite))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.LISTING).userMessage) }
             }
         }
@@ -197,7 +197,7 @@ class FileLibraryViewModel @Inject constructor(
                 appendMetadata(MetadataOperation.CreateFolder(folder.id, folder.name, folder.parentId))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.LISTING).userMessage) }
             }
         }
@@ -212,7 +212,7 @@ class FileLibraryViewModel @Inject constructor(
                 appendMetadata(MetadataOperation.RenameFolder(folder.id, cleanName))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.LISTING).userMessage) }
             }
         }
@@ -225,7 +225,7 @@ class FileLibraryViewModel @Inject constructor(
                 appendMetadata(MetadataOperation.DeleteFolder(folder.id))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.LISTING).userMessage) }
             }
         }
@@ -238,7 +238,7 @@ class FileLibraryViewModel @Inject constructor(
                 appendMetadata(MetadataOperation.MoveFile(file.stableId, folderId))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.LISTING).userMessage) }
             }
         }
@@ -264,7 +264,7 @@ class FileLibraryViewModel @Inject constructor(
                 downloadCoordinator.retryDownload(file.stableId)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(notice = UiNotice(error.toAppError(ErrorOperation.DOWNLOAD).userMessage, isError = true)) }
             }
         }
@@ -277,7 +277,7 @@ class FileLibraryViewModel @Inject constructor(
                 _state.update { it.copy(notice = UiNotice("Removed the offline copy of ${file.originalFilename}")) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(notice = UiNotice(error.toAppError(ErrorOperation.STORAGE).userMessage, isError = true)) }
             }
         }
@@ -348,7 +348,7 @@ class FileLibraryViewModel @Inject constructor(
                 _state.update { it.copy(notice = UiNotice("Copy saved")) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(notice = UiNotice(error.toAppError(ErrorOperation.STORAGE).userMessage, isError = true)) }
             }
         }
@@ -361,7 +361,7 @@ class FileLibraryViewModel @Inject constructor(
                 downloadCoordinator.launchLocalFile(available, share)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(notice = UiNotice(error.toAppError(ErrorOperation.DOWNLOAD).userMessage, isError = true)) }
             }
         }
@@ -379,7 +379,7 @@ class FileLibraryViewModel @Inject constructor(
                 repository.updateFile(file.copy(remoteAvailability = RemoteAvailability.DELETED))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.LISTING).userMessage) }
             }
         }

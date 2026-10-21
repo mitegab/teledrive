@@ -56,7 +56,7 @@ class SettingsViewModel @Inject constructor(
                 preferences.setTheme(theme)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 showError(error)
             }
         }
@@ -68,7 +68,7 @@ class SettingsViewModel @Inject constructor(
                 preferences.setSyncMetadataEnabled(enabled)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 showError(error)
             }
         }
@@ -80,7 +80,7 @@ class SettingsViewModel @Inject constructor(
             _state.update { it.copy(isClearingCache = true, cacheCleared = false, errorMessage = null) }
             try {
                 // Stop in-flight writers first so they cannot recreate a copy mid-clear.
-                downloadCoordinator.cancelAll()
+                downloadCoordinator.cancelAllNow()
                 val cleared = repository.clearAllLocalCopies()
                 val bytesFreed = localStorage.clearManagedFiles()
                 _state.update {
@@ -94,7 +94,7 @@ class SettingsViewModel @Inject constructor(
             } catch (cancelled: CancellationException) {
                 _state.update { it.copy(isClearingCache = false) }
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(isClearingCache = false, errorMessage = error.toAppError(ErrorOperation.STORAGE).userMessage) }
             }
         }

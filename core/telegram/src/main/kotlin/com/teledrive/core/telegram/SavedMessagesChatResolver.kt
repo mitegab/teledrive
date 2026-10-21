@@ -43,14 +43,14 @@ internal class SavedMessagesChatResolver(
             return adopt(send(TdLibRequests.getChat(user.id)), user).also {
                 TeleDriveLog.d("chat.resolve", "path" to "getChat", "chat_id" to it.chatId)
             }
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             lastError = error
         }
         try {
             return adopt(send(TdLibRequests.createPrivateChat(user.id, force = false)), user).also {
                 TeleDriveLog.d("chat.resolve", "path" to "createPrivateChat", "chat_id" to it.chatId)
             }
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             lastError = error
         }
         // Cold clients may need the main chat list loaded before any chat is known.
@@ -59,7 +59,7 @@ internal class SavedMessagesChatResolver(
             return adopt(send(TdLibRequests.getChat(user.id)), user).also {
                 TeleDriveLog.d("chat.resolve", "path" to "loadChats", "chat_id" to it.chatId)
             }
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             lastError = error
         }
         TeleDriveLog.d("chat.resolve", "path" to "failed")

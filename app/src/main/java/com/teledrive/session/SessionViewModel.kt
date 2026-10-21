@@ -35,7 +35,8 @@ class SessionViewModel @Inject constructor(
                     it.copy(
                         authorizationState = authorizationState,
                         isConnecting = false,
-                        actionError = if (authorizationState is AuthorizationState.Error) authorizationState.message else it.actionError,
+                        // A recovered state clears the previous failure instead of leaving a stale banner.
+                        actionError = (authorizationState as? AuthorizationState.Error)?.message,
                     )
                 }
             }
@@ -50,7 +51,7 @@ class SessionViewModel @Inject constructor(
                 gateway.start()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 showError(error)
             } finally {
                 _uiState.update { it.copy(isConnecting = false) }
@@ -70,7 +71,7 @@ class SessionViewModel @Inject constructor(
                 gateway.cancelAuthorization()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 showError(error)
             }
         }
@@ -82,7 +83,7 @@ class SessionViewModel @Inject constructor(
                 gateway.logOut()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 showError(error)
             }
         }
@@ -97,7 +98,7 @@ class SessionViewModel @Inject constructor(
                 action()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 showError(error)
             }
         }

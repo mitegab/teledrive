@@ -52,7 +52,7 @@ class ViewerViewModel @Inject constructor(
                     // Closing the viewer must not be reported as a download failure.
                     _state.value = ViewerState()
                     throw cancelled
-                } catch (error: Throwable) {
+                } catch (error: Exception) {
                     _state.value = ViewerState(file = file, error = error.toAppError(ErrorOperation.DOWNLOAD).userMessage)
                 }
             }
@@ -66,7 +66,7 @@ class ViewerViewModel @Inject constructor(
             external.open(file, false)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             _state.value = _state.value.copy(error = error.toAppError(ErrorOperation.STORAGE).userMessage)
         }
     }
@@ -77,7 +77,7 @@ class ViewerViewModel @Inject constructor(
                 downloads.export(path, destination)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.value = _state.value.copy(error = error.toAppError(ErrorOperation.STORAGE).userMessage)
             }
         }
