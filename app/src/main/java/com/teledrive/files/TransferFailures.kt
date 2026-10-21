@@ -21,7 +21,10 @@ internal fun Throwable.toTransferFailure(
 ): TransferEvent.Fail {
     val appError = toAppError(operation)
     val retryable = appError.retryable && this !is CancellationException
+    // Telegram's own flood-wait (parsed into the AppError) wins over our backoff, then an
+    // explicitly supplied delay, then jittered exponential backoff.
     val delaySeconds = retryAfterSeconds?.takeIf { it > 0L }
+        ?: appError.retryAfterSeconds?.takeIf { it > 0L }
         ?: TransferRetryPolicy.nextDelaySeconds(attempt)
     val retryAt = if (retryable) System.currentTimeMillis() / 1000 + delaySeconds else null
     if (!retryable) TeleDriveLog.d(appError.logLine())

@@ -141,8 +141,10 @@ object AppErrorMessages {
 
 object AppErrorMapper {
     private const val MAX_CAUSE_LENGTH = 200
-    private val floodWait = Regex("FLOOD_WAIT_?(\\d+)", RegexOption.IGNORE_CASE)
-    private val retryAfter = Regex("RETRY_AFTER_?(\\d+)", RegexOption.IGNORE_CASE)
+    // TDLib reports "Too Many Requests: retry after 30"; codes elsewhere use
+    // FLOOD_WAIT_30 / RETRY_AFTER_30. Accept separators in either form.
+    private val floodWait = Regex("FLOOD[_ ]WAIT[ _:]?[ ]?(\\d+)", RegexOption.IGNORE_CASE)
+    private val retryAfter = Regex("RETRY[ _]AFTER[ _:]?[ ]?(\\d+)", RegexOption.IGNORE_CASE)
 
     fun cancellation(operation: ErrorOperation = ErrorOperation.UNKNOWN): AppError = AppError(
         category = ErrorCategory.TRANSFER_CANCELED,
