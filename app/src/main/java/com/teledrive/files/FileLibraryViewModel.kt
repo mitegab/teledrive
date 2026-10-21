@@ -63,6 +63,12 @@ data class FileLibraryUiState(
     val activeDownloads: Int get() = downloads.values.count { it.isActive }
     val queuedDownloads: Int get() = downloads.values.count { it.state == TransferState.QUEUED }
     val offlineOnly: Boolean get() = query.localOnly
+    val selectedCompleted: Int
+        get() = selectedIds.count { id -> downloads[id]?.state == TransferState.COMPLETED }
+    val batchFraction: Float?
+        get() = selectedIds.size.takeIf { it > 0 }?.let { total ->
+            (selectedCompleted.toFloat() / total).coerceIn(0f, 1f)
+        }
 }
 
 @HiltViewModel

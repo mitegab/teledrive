@@ -296,9 +296,11 @@ fun FileBrowserScreen(
             }
             if (state.batchRunning) {
                 Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    state.batchFraction?.let { fraction ->
+                        LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
+                    } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Text(
-                        "Saving selected files · ${state.activeDownloads} active, ${state.queuedDownloads} queued",
+                        "${state.selectedCompleted} of ${state.selectedIds.size} finished · ${state.activeDownloads} active, ${state.queuedDownloads} queued",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
