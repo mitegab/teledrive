@@ -4,11 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.teledrive.core.domain.FileIndexRepository
 import com.teledrive.core.domain.TelegramStorageGateway
+import com.teledrive.core.domain.toAppError
+import com.teledrive.core.model.ErrorOperation
 import com.teledrive.core.model.StoredFile
 import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.FileOpenRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
@@ -43,9 +46,15 @@ class ViewerViewModel @Inject constructor(
             if (file == null) _state.value = ViewerState(error = "This file is no longer in the library.")
             else {
                 _state.value = ViewerState(file = file, loading = true)
-                runCatching { downloads.download(file) }
-                    .onSuccess { _state.value = ViewerState(file = it) }
-                    .onFailure { error -> _state.value = ViewerState(file = file, error = error.message ?: "Download failed.") }
+                try {
+                    _state.value = ViewerState(file = downloads.download(file))
+                } catch (cancelled: CancellationException) {
+                    // Closing the viewer must not be reported as a download failure.
+                    _state.value = ViewerState()
+                    throw cancelled
+                } catch (error: Throwable) {
+                    _state.value = ViewerState(file = file, error = error.toAppError(ErrorOperation.DOWNLOAD).userMessage)
+                }
             }
         }
     }
@@ -53,14 +62,24 @@ class ViewerViewModel @Inject constructor(
     fun cancelDownload() { _state.value.file?.let { downloads.cancel(it.stableId) } }
     fun openExternal() {
         val file = _state.value.file ?: return
-        runCatching { external.open(file, false) }
-            .onFailure { _state.value = _state.value.copy(error = it.message ?: "Unable to open in another app.") }
+        try {
+            external.open(file, false)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            _state.value = _state.value.copy(error = error.toAppError(ErrorOperation.STORAGE).userMessage)
+        }
     }
     fun export(destination: android.net.Uri) {
         val path = _state.value.file?.localPath ?: return
         viewModelScope.launch {
-            runCatching { downloads.export(path, destination) }
-                .onFailure { _state.value = _state.value.copy(error = it.message ?: "Export failed.") }
+            try {
+                downloads.export(path, destination)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                _state.value = _state.value.copy(error = error.toAppError(ErrorOperation.STORAGE).userMessage)
+            }
         }
     }
 }

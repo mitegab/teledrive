@@ -37,6 +37,17 @@ class PdfModelsTest {
     }
 
     @Test
+    fun readingProgressKeepsASafeScrollOffset() {
+        val weird = PdfReadingProgress("1:2", 3, 10, scrollOffsetFraction = 2.5f).normalized(10)!!
+        assertTrue(weird.scrollOffsetFraction in 0f..0.95f)
+        val nan = PdfReadingProgress("1:2", 3, 10, scrollOffsetFraction = Float.NaN).normalized(10)!!
+        assertEquals(0f, nan.scrollOffsetFraction)
+        val saved = PdfReadingProgressRules.forPage("1:2", 4, 10, 2f, 5L, 0.4f)!!
+        assertEquals(4, saved.pageIndex)
+        assertEquals(0.4f, saved.scrollOffsetFraction)
+    }
+
+    @Test
     fun readingProgressIsClampedToTheCurrentDocument() {
         val stored = PdfReadingProgress("1:2", pageIndex = 99, pageCount = 40, zoom = 12f)
         val normalized = stored.normalized(currentPageCount = 20)!!

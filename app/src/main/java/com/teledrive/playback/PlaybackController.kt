@@ -128,7 +128,10 @@ class PlaybackController @Inject constructor(
             } else {
                 context.startService(intent)
             }
-        } catch (_: Exception) { /* service may not be needed if player handles it */ }
+        } catch (error: Exception) {
+            // The service is optional for in-process playback, but the failure is worth a log.
+            com.teledrive.core.model.TeleDriveLog.d("playback.service_start_failed", "error" to error.message)
+        }
     }
 
     suspend fun playSingle(stableId: String, allIds: List<String> = emptyList()) {
@@ -219,6 +222,10 @@ class PlaybackController @Inject constructor(
             val exo = ensurePlayer()
             ensureService()
             _uiState.update { it.copy(status = PlaybackStatus.PREPARING, error = null) }
+            if (item.localPath.isBlank()) {
+                _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = MediaErrorMapper.missingFile("The file has not been downloaded yet.")) }
+                return@withContext
+            }
             val file = File(item.localPath)
             if (!file.exists()) {
                 _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = MediaErrorMapper.missingFile("Local file not found: ${item.file.originalFilename}")) }

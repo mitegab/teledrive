@@ -57,7 +57,9 @@ class MediaMetadataExtractor @Inject constructor(
                 } else bytes
             }
             ExtractedMetadata(title, artist, album, duration, art, track?.takeIf { it.isNotBlank() })
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            // Metadata is optional; the file name remains a usable title.
+            com.teledrive.core.model.TeleDriveLog.d("media.metadata_failed", "error" to error.message)
             ExtractedMetadata(fallbackTitle, null, null, null, null, null)
         } finally {
             runCatching { retriever.release() }
