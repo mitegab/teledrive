@@ -668,13 +668,8 @@ class DownloadCoordinator @Inject constructor(
 
     private fun stableIdTail(stableId: String): String = stableId.substringAfter(':', stableId).takeLast(6)
 
-    private fun Throwable.toDownloadError(): AppError = when (this) {
-        is DownloadException -> error
-        is LocalStorageException -> this.toAppError(ErrorOperation.DOWNLOAD)
-        is StorageGatewayException -> this.toAppError(ErrorOperation.DOWNLOAD)
-        is CancellationException -> AppErrorMapper.cancellation(ErrorOperation.DOWNLOAD)
-        else -> AppErrorMapper.fromThrowable(this, ErrorOperation.DOWNLOAD)
-    }
+    private fun Throwable.toDownloadError(): AppError =
+        if (this is DownloadException) error else toTransferAppError(ErrorOperation.DOWNLOAD)
 
     @VisibleForTesting
     internal suspend fun queuedCount(): Int = queueMutex.withLock { queue.size }
