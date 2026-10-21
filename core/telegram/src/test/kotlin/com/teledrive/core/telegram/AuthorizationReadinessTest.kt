@@ -46,9 +46,10 @@ class AuthorizationReadinessTest {
 
         try {
             awaitReadySession(state, timeoutMillis = 5_000)
-            fail("expected NOT_READY")
+            fail("expected NOT_AUTHENTICATED")
         } catch (error: StorageGatewayException) {
-            assertEquals("NOT_READY", error.code)
+            // A logged-out session is an authentication problem, not a failed download.
+            assertEquals("NOT_AUTHENTICATED", error.code)
             assertEquals(false, error.retryable)
             assertTrue("message should ask for login: ${error.message}", error.message!!.contains("Log in"))
         }
@@ -62,9 +63,9 @@ class AuthorizationReadinessTest {
 
         try {
             awaitReadySession(state, timeoutMillis = 5_000)
-            fail("expected NOT_READY")
+            fail("expected AUTHENTICATION_ERROR")
         } catch (error: StorageGatewayException) {
-            assertEquals("NOT_READY", error.code)
+            assertEquals("AUTHENTICATION_ERROR", error.code)
             assertEquals(false, error.retryable)
             assertEquals("Telegram API credentials are missing", error.message)
         }

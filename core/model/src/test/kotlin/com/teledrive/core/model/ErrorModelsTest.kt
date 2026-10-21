@@ -190,4 +190,59 @@ class ErrorModelsTest {
         assertEquals(ErrorCategory.entries.size, messages.toSet().size)
         assertTrue(messages.all { it.length > 20 && !it.contains("Exception") })
     }
+
+    @Test
+    fun onlyNetworkFailuresBlameTheConnection() {
+        // Regression guard for "Download failed. Check your connection and try again.": the
+        // generic transfer sentences are used for storage, verification and session failures,
+        // so they must not suggest that the user's internet is broken.
+        val blaming = ErrorCategory.entries.filter { category ->
+            val message = AppErrorMessages.forCategory(category)
+            message.contains("connection", ignoreCase = true) || message.contains("network", ignoreCase = true)
+        }
+        assertEquals(listOf(ErrorCategory.NETWORK_UNAVAILABLE), blaming)
+
+        listOf(ErrorCategory.DOWNLOAD_FAILED, ErrorCategory.UPLOAD_FAILED).forEach { category ->
+            val message = AppErrorMessages.forCategory(category)
+            assertFalse("$category must not blame connectivity: $message", message.contains("connection", ignoreCase = true))
+        }
+    }
+
+    @Test
+    fun aSessionThatIsNotReadyIsNotADownloadOrNetworkFailure() {
+        listOf("NOT_READY", "TDLIB_NOT_STARTED").forEach { code ->
+            val error = AppErrorMapper.fromCode(code, "Telegram is still starting up", ErrorOperation.DOWNLOAD)
+            assertEquals("category for $code", ErrorCategory.SESSION_NOT_READY, error.category)
+            assertTrue("retryable for $code", error.retryable)
+            assertFalse(error.userMessage.contains("connection", ignoreCase = true))
+            assertTrue(error.userMessage.contains("ready") || error.userMessage.contains("moment"))
+        }
+
+        val loggedOut = AppErrorMapper.fromCode("NOT_AUTHENTICATED", "Log in to Telegram to continue", ErrorOperation.DOWNLOAD)
+        assertEquals(ErrorCategory.AUTHENTICATION_REQUIRED, loggedOut.category)
+        assertFalse(loggedOut.retryable)
+        assertTrue(loggedOut.userMessage.contains("Log in"))
+    }
+
+    @Test
+    fun logLineKeepsTheFailureClassificationVisible() {
+        // The log key must not be "code=", which TeleDriveLog redacts for SMS/auth codes.
+        val line = AppErrorMapper.fromCode("DOWNLOAD_PATH_MISSING", null, ErrorOperation.DOWNLOAD).logLine()
+        assertTrue("classification missing from: $line", line.contains("error_code=DOWNLOAD_PATH_MISSING"))
+        assertFalse(line.contains("[redacted]"))
+    }
+
+    @Test
+    fun downloadHandoffAndExpiredReferenceGetConcreteSentences() {
+        val noPath = AppErrorMapper.fromCode("DOWNLOAD_PATH_MISSING", null, ErrorOperation.DOWNLOAD)
+        assertEquals(ErrorCategory.DOWNLOAD_FAILED, noPath.category)
+        assertTrue(noPath.retryable)
+        assertFalse(noPath.userMessage.contains("connection", ignoreCase = true))
+        assertTrue(noPath.userMessage.contains("device", ignoreCase = true))
+
+        val expired = AppErrorMapper.fromCode("FILE_REFERENCE_EXPIRED", null, ErrorOperation.DOWNLOAD)
+        assertTrue(expired.retryable)
+        assertTrue(expired.userMessage.contains("expired", ignoreCase = true))
+        assertEquals("The upload didn't finish. Try again.", AppErrorMessages.forCategory(ErrorCategory.UPLOAD_FAILED))
+    }
 }

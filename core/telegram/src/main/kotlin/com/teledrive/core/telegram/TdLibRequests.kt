@@ -81,6 +81,11 @@ internal object TdLibRequests {
         .put("limit", limit)
         .put("synchronous", synchronous)
 
+    /** td_api.tl: `getFile file_id:int32 = File` — used to re-read the authoritative local path. */
+    fun getFile(fileId: Int): JSONObject = JSONObject()
+        .put("@type", "getFile")
+        .put("file_id", fileId)
+
     /** td_api.tl: `cancelDownloadFile file_id:int32 only_if_pending:Bool = Ok` */
     fun cancelDownloadFile(fileId: Int, onlyIfPending: Boolean): JSONObject = JSONObject()
         .put("@type", "cancelDownloadFile")

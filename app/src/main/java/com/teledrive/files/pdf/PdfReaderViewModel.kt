@@ -33,6 +33,7 @@ import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.FileOpenRouter
 import com.teledrive.files.LocalFileStorage
 import com.teledrive.files.UiNotice
+import com.teledrive.files.toDownloadAppError
 import com.teledrive.preferences.PreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
@@ -178,9 +179,8 @@ class PdfReaderViewModel @Inject constructor(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                val message = (error as? com.teledrive.files.DownloadException)?.error?.userMessage
-                    ?: error.toAppError(ErrorOperation.DOWNLOAD).userMessage
-                fail(message, canRetryDownload = true, canOpenExternal = false)
+                // Preserve the coordinator's reason instead of inventing a network failure.
+                fail(error.toDownloadAppError().userMessage, canRetryDownload = true, canOpenExternal = false)
                 return@launch
             }
             loadedFile = file
