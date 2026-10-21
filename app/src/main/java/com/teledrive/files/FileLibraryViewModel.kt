@@ -19,6 +19,7 @@ import com.teledrive.core.model.RemoteAvailability
 import com.teledrive.core.model.SortDirection
 import com.teledrive.core.model.SortField
 import com.teledrive.core.model.StoredFile
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.core.model.TransferState
 import com.teledrive.metadata.MetadataSyncWriter
 import com.teledrive.preferences.PreferencesRepository
@@ -411,8 +412,32 @@ class FileLibraryViewModel @Inject constructor(
 
     fun clearError() = _state.update { it.copy(errorMessage = null) }
 
+    /**
+     * Local metadata changes are already persisted when this runs, so a failed remote
+     * append must not be reported as a failed action. It stays a separate, honest notice.
+     */
     private suspend fun appendMetadata(operation: MetadataOperation) {
-        if (preferences.syncMetadataEnabled.first()) metadataWriter.append(operation)
+        if (!preferences.syncMetadataEnabled.first()) return
+        try {
+            metadataWriter.append(operation)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // Log only the operation type and a sanitized cause; folder/file names are user content.
+            TeleDriveLog.d(
+                "metadata.append_failed",
+                "operation" to operation::class.java.simpleName,
+                "error" to com.teledrive.core.model.AppErrorMapper.sanitizeCause(error.message),
+            )
+            _state.update {
+                it.copy(
+                    notice = UiNotice(
+                        "Saved on this device. Syncing the change to Telegram failed, so other devices will not see it yet.",
+                        isError = true,
+                    ),
+                )
+            }
+        }
     }
 
     private suspend fun applyMetadataSnapshot(snapshot: com.teledrive.core.model.MetadataSnapshot) {
