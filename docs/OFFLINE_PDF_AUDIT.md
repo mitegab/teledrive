@@ -74,8 +74,8 @@ What can be executed: a JVM harness built from the npm-published Kotlin compiler
 
 ## 7. Implementation results
 
-Everything below is on branch `arena/5207da66-teledrive`, commits `510ceaa`..`ffcf06a`
-(14 commits over base `780ca8a`; 56 files, +6751/−349).
+Everything below is on branch `arena/5207da66-teledrive`, commits `510ceaa`..`5fbcf07`
+(18 commits over base `780ca8a`), all pushed as a linear history (no rewrites).
 
 | Commit | Content |
 | --- | --- |
@@ -84,7 +84,7 @@ Everything below is on branch `arena/5207da66-teledrive`, commits `510ceaa`..`ff
 | `7b5ea1d` | PREPARING/VERIFYING states, retry bounds, download limits, speed estimator, tests |
 | `03ca924` | Offline availability policy, `FileQuery.localOnly`, reconcile/stale rules, tests |
 | `b7f2a55` | PDF rules, tolerant outline parser, reading progress + scroll offset, tests |
-| `6f320d8` | Room v4 offline record, `DownloadCoordinator` (3 workers, verify, cancel), `DownloadStatusStore`, `StartupReconciler`, bounded drain worker |
+| `6f320d8` | Room v4 offline record, `DownloadCoordinator` (bounded pool, verify, cancel), `DownloadStatusStore`, `StartupReconciler`, bounded drain worker |
 | `5b77e78` | File browser/download/transfer UI: per-file state, bulk multi-select with partial report, offline library filter, cache clear |
 | `45384ee` | PDF reader: `PdfDocument`, `PdfReaderViewModel`, `PdfReaderScreen`, `pdf/{stableId}` route, progress persistence |
 | `7687479` | Overall batch progress from real completed files; search cancellation check |
@@ -93,6 +93,10 @@ Everything below is on branch `arena/5207da66-teledrive`, commits `510ceaa`..`ff
 | `de42b60` | Metadata append failures no longer reported as failed local actions |
 | `30663f7` | Published copy probed for readability/size before COMPLETED |
 | `ffcf06a` | `tools/jvm-verify` harness so the evidence is reproducible |
+| `4f5703f` | This results section |
+| `38c4657` | Flood-wait delays parsed from TDLib's natural "retry after N" text |
+| `cdb00fa` | Unexpected transfer exceptions are no longer auto-retried |
+| `5fbcf07` | Startup settlement skips in-process transfers; direction-neutral message |
 
 ### Executed verification
 
@@ -104,7 +108,7 @@ kotlinc -d /tmp/syntax-out $(find app/src/main/java core -name '*.kt') 2>&1 \
 
 # Model layer + tests on a plain JVM
 JAVA_HOME=/path/to/jdk KC=/tmp/kit/package bash tools/jvm-verify/run-model-tests.sh
-# -> RESULT passed=101 failed=0
+# -> RESULT passed=102 failed=0
 #    persistence: naive=1200 throttled=120 ticks=1200
 #    scheduling:  downloads=6 workers=3 serial=24000ms bounded=8000ms
 #    estimator:   reported=2097144B/s true=2097152B/s error=0.0%
