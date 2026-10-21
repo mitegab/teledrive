@@ -33,6 +33,7 @@ import com.teledrive.playback.ui.MiniPlayer
 import com.teledrive.playback.ui.VideoPlayerScreen
 import com.teledrive.session.SessionViewModel
 import com.teledrive.files.FileBrowserScreen
+import com.teledrive.files.pdf.PdfReaderScreen
 import com.teledrive.transfers.TransfersScreen
 import com.teledrive.settings.SettingsViewModel
 
@@ -51,7 +52,10 @@ fun AuthenticatedNavHost(sessionViewModel: SessionViewModel, settingsViewModel: 
     }
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val hideBottomBar = currentRoute?.startsWith("viewer/") == true || currentRoute?.startsWith("video/") == true || currentRoute?.startsWith("audio") == true
+    val hideBottomBar = currentRoute?.startsWith("viewer/") == true ||
+        currentRoute?.startsWith("video/") == true ||
+        currentRoute?.startsWith("audio") == true ||
+        currentRoute?.startsWith("pdf/") == true
     // Observe playback for smart mini-player expansion
     val playerVM: MediaPlayerViewModel = hiltViewModel()
     val playerUi by playerVM.uiState.collectAsStateWithLifecycle()
@@ -95,7 +99,8 @@ fun AuthenticatedNavHost(sessionViewModel: SessionViewModel, settingsViewModel: 
                 FileBrowserScreen(
                     onOpenViewer = { id, imageIds -> navController.navigate("viewer/${Uri.encode(id)}?images=${Uri.encode(imageIds.joinToString(","))}") },
                     onOpenVideo = { id, allIds -> navController.navigate("video/${Uri.encode(id)}?all=${Uri.encode(allIds.joinToString(","))}") },
-                    onOpenAudio = { id, allIds -> navController.navigate("audio/${Uri.encode(id)}?all=${Uri.encode(allIds.joinToString(","))}") }
+                    onOpenAudio = { id, allIds -> navController.navigate("audio/${Uri.encode(id)}?all=${Uri.encode(allIds.joinToString(","))}") },
+                    onOpenPdf = { id -> navController.navigate("pdf/${Uri.encode(id)}") },
                 )
             }
             composable("viewer/{stableId}?images={images}", arguments = listOf(navArgument("stableId") { type = NavType.StringType }, navArgument("images") { type = NavType.StringType; defaultValue = "" })) { entry ->
@@ -114,6 +119,16 @@ fun AuthenticatedNavHost(sessionViewModel: SessionViewModel, settingsViewModel: 
                 val stableId = Uri.decode(entry.arguments?.getString("stableId").orEmpty())
                 val allIds = Uri.decode(entry.arguments?.getString("all").orEmpty()).split(',').filter(String::isNotBlank)
                 AudioPlayerScreen(stableId = stableId, allIds = allIds, onBack = { navController.popBackStack() })
+            }
+            composable(
+                "pdf/{stableId}",
+                arguments = listOf(navArgument("stableId") { type = NavType.StringType }),
+            ) {
+                // Hilt builds the ViewModel with a SavedStateHandle containing "stableId".
+                PdfReaderScreen(
+                    onBack = { navController.popBackStack() },
+                    viewModel = androidx.hilt.navigation.compose.hiltViewModel(),
+                )
             }
             composable("transfers") { TransfersScreen() }
             composable("settings") { SettingsScreen(settingsViewModel = settingsViewModel, onLogout = sessionViewModel::logout) }

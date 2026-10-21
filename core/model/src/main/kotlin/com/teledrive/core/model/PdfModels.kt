@@ -98,6 +98,8 @@ data class PdfReadingProgress(
     val pageCount: Int,
     val zoom: Float = PdfZoom.MIN_SCALE,
     val updatedAtEpochMillis: Long = 0L,
+    /** How far into the current page the reader was, kept as a fraction of its height. */
+    val scrollOffsetFraction: Float = 0f,
 ) {
     fun normalized(currentPageCount: Int): PdfReadingProgress? {
         if (documentId.isBlank() || currentPageCount <= 0) return null
@@ -107,6 +109,7 @@ data class PdfReadingProgress(
             pageCount = currentPageCount,
             zoom = PdfZoom.clamp(zoom),
             updatedAtEpochMillis = updatedAtEpochMillis,
+            scrollOffsetFraction = if (scrollOffsetFraction.isNaN()) 0f else scrollOffsetFraction.coerceIn(0f, 0.95f),
         )
     }
 
@@ -137,8 +140,15 @@ object PdfReadingProgressRules {
         return normalized.copy(pageIndex = (normalized.pageIndex - 1).coerceAtLeast(0))
     }
 
-    fun forPage(documentId: String, pageIndex: Int, pageCount: Int, zoom: Float, nowMillis: Long): PdfReadingProgress? =
-        PdfReadingProgress(documentId, pageIndex, pageCount, zoom, nowMillis).normalized(pageCount)
+    fun forPage(
+        documentId: String,
+        pageIndex: Int,
+        pageCount: Int,
+        zoom: Float,
+        nowMillis: Long,
+        scrollOffsetFraction: Float = 0f,
+    ): PdfReadingProgress? =
+        PdfReadingProgress(documentId, pageIndex, pageCount, zoom, nowMillis, scrollOffsetFraction).normalized(pageCount)
 }
 
 /** One page that contains at least one search hit. */

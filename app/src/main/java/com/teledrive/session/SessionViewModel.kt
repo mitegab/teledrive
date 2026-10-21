@@ -2,11 +2,13 @@ package com.teledrive.session
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.teledrive.core.domain.StorageGatewayException
 import com.teledrive.core.domain.TelegramStorageGateway
+import com.teledrive.core.domain.toAppError
 import com.teledrive.core.model.AuthorizationState
+import com.teledrive.core.model.ErrorOperation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -44,8 +46,15 @@ class SessionViewModel @Inject constructor(
         if (_uiState.value.isConnecting) return
         viewModelScope.launch {
             _uiState.update { it.copy(isConnecting = true, actionError = null) }
-            runCatching { gateway.start() }
-                .onFailure { error -> showError(error) }
+            try {
+                gateway.start()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                showError(error)
+            } finally {
+                _uiState.update { it.copy(isConnecting = false) }
+            }
         }
     }
 
@@ -56,11 +65,27 @@ class SessionViewModel @Inject constructor(
     fun submitEmailCode(value: String) = submit { gateway.submitEmailCode(value) }
 
     fun cancel() {
-        viewModelScope.launch { runCatching { gateway.cancelAuthorization() }.onFailure(::showError) }
+        viewModelScope.launch {
+            try {
+                gateway.cancelAuthorization()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                showError(error)
+            }
+        }
     }
 
     fun logout() {
-        viewModelScope.launch { runCatching { gateway.logOut() }.onFailure(::showError) }
+        viewModelScope.launch {
+            try {
+                gateway.logOut()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                showError(error)
+            }
+        }
     }
 
     fun clearError() = _uiState.update { it.copy(actionError = null) }
@@ -68,15 +93,18 @@ class SessionViewModel @Inject constructor(
     private fun submit(action: suspend () -> Unit) {
         viewModelScope.launch {
             _uiState.update { it.copy(actionError = null) }
-            runCatching { action() }.onFailure(::showError)
+            try {
+                action()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                showError(error)
+            }
         }
     }
 
     private fun showError(error: Throwable) {
-        val message = when (error) {
-            is StorageGatewayException -> error.message
-            else -> error.message ?: "Something went wrong"
-        }
-        _uiState.update { it.copy(isConnecting = false, actionError = message) }
+        val appError = error.toAppError(ErrorOperation.AUTHENTICATION)
+        _uiState.update { it.copy(isConnecting = false, actionError = appError.userMessage) }
     }
 }

@@ -114,6 +114,29 @@ object AppErrorMessages {
         ErrorCategory.SAVED_MESSAGES_UNAVAILABLE -> "TeleDrive couldn't open Saved Messages in Telegram. Try again in a moment."
         ErrorCategory.UNKNOWN -> "Something went wrong. TeleDrive recorded the details for diagnostics."
     }
+
+    /**
+     * Telegram authentication failures are actionable on their own; a generic
+     * "session needs attention" sentence would hide which input was rejected.
+     */
+    fun forAuthenticationCode(code: String?): String? {
+        val normalized = code.orEmpty().uppercase().replace(Regex("[\\s-]+"), "_")
+        return when {
+            normalized.contains("PHONE_NUMBER_INVALID") || normalized.contains("PHONE_NUMBER_EMPTY") ->
+                "That phone number doesn't look valid. Enter it in international format."
+            normalized.contains("PHONE_CODE_EXPIRED") -> "The verification code expired. Request a new one."
+            normalized.contains("PHONE_CODE_INVALID") || normalized.contains("PHONE_CODE_EMPTY") ->
+                "That verification code wasn't accepted. Check the digits and try again."
+            normalized.contains("PASSWORD_HASH_INVALID") -> "The two-step verification password was incorrect."
+            normalized.contains("SESSION_PASSWORD_NEEDED") || normalized.contains("PASSWORD_EMPTY") ->
+                "Enter your two-step verification password to continue."
+            normalized.contains("EMAIL_ADDRESS_INVALID") || normalized.contains("EMAIL_CODE_INVALID") ->
+                "That email or email code wasn't accepted. Check it and try again."
+            normalized.contains("USER_DEACTIVATED") -> "This Telegram account can't be used right now."
+            normalized.contains("FLOOD_WAIT") -> null
+            else -> null
+        }
+    }
 }
 
 object AppErrorMapper {
@@ -157,6 +180,16 @@ object AppErrorMapper {
                     retryAfterSeconds = requestedDelaySeconds(code, message),
                 )
 
+            operation == ErrorOperation.AUTHENTICATION && AppErrorMessages.forAuthenticationCode(normalized) != null ->
+                AppError(
+                    category = ErrorCategory.AUTHENTICATION_REQUIRED,
+                    operation = operation,
+                    userMessage = AppErrorMessages.forAuthenticationCode(normalized)!!,
+                    retryable = false,
+                    diagnosticCode = code,
+                    diagnosticCause = sanitizeCause(message),
+                )
+
             normalized == "AUTHENTICATION_ERROR" || normalized.contains("SESSION_") || normalized.startsWith("AUTH_KEY") ->
                 category(ErrorCategory.AUTHENTICATION_REQUIRED, operation, retryable = false, code = code, message = message)
 
@@ -189,6 +222,11 @@ object AppErrorMapper {
 
             normalized.toIntOrNull()?.let { numeric -> numeric == 429 || numeric in 500..599 } == true ->
                 category(transferCategory(operation), operation, retryable = true, code = code, message = message)
+
+            // Anything unrecognized inside the authentication flow still means the
+            // session is not usable; reporting UNKNOWN would hide the recovery action.
+            operation == ErrorOperation.AUTHENTICATION ->
+                category(ErrorCategory.AUTHENTICATION_REQUIRED, operation, retryable = false, code = code, message = message)
 
             retryableHint ->
                 category(transferCategory(operation), operation, retryable = true, code = code, message = message)

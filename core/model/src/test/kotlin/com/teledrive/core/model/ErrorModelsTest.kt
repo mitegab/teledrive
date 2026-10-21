@@ -149,6 +149,29 @@ class ErrorModelsTest {
     }
 
     @Test
+    fun authenticationCodesBecomeSpecificActionableMessages() {
+        val invalidPhone = AppErrorMapper.fromCode("PHONE_NUMBER_INVALID", "PHONE_NUMBER_INVALID", ErrorOperation.AUTHENTICATION)
+        assertEquals(ErrorCategory.AUTHENTICATION_REQUIRED, invalidPhone.category)
+        assertTrue(invalidPhone.userMessage.contains("phone number"))
+        assertFalse(invalidPhone.retryable)
+
+        val wrongPassword = AppErrorMapper.fromCode("PASSWORD_HASH_INVALID", "PASSWORD_HASH_INVALID", ErrorOperation.AUTHENTICATION)
+        assertTrue(wrongPassword.userMessage.contains("two-step verification password"))
+        assertFalse(wrongPassword.userMessage.contains("PASSWORD_HASH_INVALID"))
+    }
+
+    @Test
+    fun authenticationFallbacksDoNotLeakCodesForOtherOperations() {
+        val unknownAuth = AppErrorMapper.fromCode("SOME_UNKNOWN_AUTH_STATE", null, ErrorOperation.AUTHENTICATION)
+        assertEquals(ErrorCategory.AUTHENTICATION_REQUIRED, unknownAuth.category)
+        assertFalse(unknownAuth.userMessage.contains("SOME_UNKNOWN_AUTH_STATE"))
+
+        // The same code outside authentication is not treated as an auth message.
+        val listing = AppErrorMapper.fromCode("PHONE_NUMBER_INVALID", null, ErrorOperation.LISTING)
+        assertFalse(listing.userMessage.contains("phone number"))
+    }
+
+    @Test
     fun everyCategoryHasADistinctUserFacingSentence() {
         val messages = ErrorCategory.entries.map { AppErrorMessages.forCategory(it) }
         assertEquals(ErrorCategory.entries.size, messages.toSet().size)

@@ -218,7 +218,11 @@ private fun ArtworkView(name: String, localPath: String?, modifier: Modifier = M
             val art = retriever.embeddedPicture
             retriever.release()
             art?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-        } catch (_: Exception) { null }
+        } catch (error: Exception) {
+            // Artwork is decorative; keep the player usable and record why it is missing.
+            com.teledrive.core.model.TeleDriveLog.d("playback.artwork_failed", "error" to error.message)
+            null
+        }
     }
     Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
         if (bitmap != null) {
