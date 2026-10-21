@@ -1,6 +1,8 @@
 package com.teledrive.playback
 
 import com.teledrive.core.domain.FileIndexRepository
+import com.teledrive.core.domain.toAppError
+import com.teledrive.core.model.ErrorOperation
 import com.teledrive.core.model.FileKindDetector
 import com.teledrive.core.model.LocalAvailability
 import com.teledrive.core.model.StoredFile
@@ -43,7 +45,7 @@ class MediaPlaybackRepository @Inject constructor(
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                MediaResolution.Unavailable(resolved.file, com.teledrive.core.domain.toAppError(error, com.teledrive.core.model.ErrorOperation.DOWNLOAD).userMessage)
+                MediaResolution.Unavailable(resolved.file, error.toAppError(ErrorOperation.DOWNLOAD).userMessage)
             }
         }
         return resolved

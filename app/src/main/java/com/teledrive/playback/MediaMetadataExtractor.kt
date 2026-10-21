@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import com.teledrive.core.model.TeleDriveLog
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -61,7 +62,7 @@ class MediaMetadataExtractor @Inject constructor(
             ExtractedMetadata(title, artist, album, duration, art, track?.takeIf { it.isNotBlank() })
         } catch (error: Exception) {
             // Metadata is optional; the file name remains a usable title.
-            com.teledrive.core.model.TeleDriveLog.d("media.metadata_failed", "error" to error.message)
+            TeleDriveLog.d("media.metadata_failed", "error" to error.message)
             ExtractedMetadata(fallbackTitle, null, null, null, null, null)
         } finally {
             runCatching { retriever.release() }
