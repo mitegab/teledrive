@@ -71,3 +71,53 @@ What can be executed: a JVM harness built from the npm-published Kotlin compiler
 10. PDF reader (controller, progress store, screen, routing).
 11. App-wide error-handling pass (auth, upload, sync, media, settings, startup).
 12. Final validation and report.
+
+## 7. Implementation results
+
+Everything below is on branch `arena/5207da66-teledrive`, commits `510ceaa`..`ffcf06a`
+(14 commits over base `780ca8a`; 56 files, +6751/−349).
+
+| Commit | Content |
+| --- | --- |
+| `510ceaa` | This audit |
+| `d11b2b9` | Typed application error model, category/operation mapping, redaction, tests |
+| `7b5ea1d` | PREPARING/VERIFYING states, retry bounds, download limits, speed estimator, tests |
+| `03ca924` | Offline availability policy, `FileQuery.localOnly`, reconcile/stale rules, tests |
+| `b7f2a55` | PDF rules, tolerant outline parser, reading progress + scroll offset, tests |
+| `6f320d8` | Room v4 offline record, `DownloadCoordinator` (3 workers, verify, cancel), `DownloadStatusStore`, `StartupReconciler`, bounded drain worker |
+| `5b77e78` | File browser/download/transfer UI: per-file state, bulk multi-select with partial report, offline library filter, cache clear |
+| `45384ee` | PDF reader: `PdfDocument`, `PdfReaderViewModel`, `PdfReaderScreen`, `pdf/{stableId}` route, progress persistence |
+| `7687479` | Overall batch progress from real completed files; search cancellation check |
+| `de0cdcb` | `cancelAllNow()` before destructive cache clear, player failure reporting, receive-loop and storage logging, `Throwable`→`Exception` |
+| `9aa81aa` | Deterministic throughput simulations |
+| `de42b60` | Metadata append failures no longer reported as failed local actions |
+| `30663f7` | Published copy probed for readability/size before COMPLETED |
+| `ffcf06a` | `tools/jvm-verify` harness so the evidence is reproducible |
+
+### Executed verification
+
+```bash
+# Syntax/lexical parse of every Kotlin file in app/ and core/ (no Android deps needed)
+kotlinc -d /tmp/syntax-out $(find app/src/main/java core -name '*.kt') 2>&1 \
+  | grep -iE "expecting|syntax|unexpected token|unclosed|incorrect|lexical|redeclaration"
+# -> no matches (unresolved Android/AndroidX references are expected and filtered out)
+
+# Model layer + tests on a plain JVM
+JAVA_HOME=/path/to/jdk KC=/tmp/kit/package bash tools/jvm-verify/run-model-tests.sh
+# -> RESULT passed=101 failed=0
+#    persistence: naive=1200 throttled=120 ticks=1200
+#    scheduling:  downloads=6 workers=3 serial=24000ms bounded=8000ms
+#    estimator:   reported=2097144B/s true=2097152B/s error=0.0%
+```
+
+The three printed numbers come from deterministic policy simulations
+(`TransferThroughputSimulationTest`), not from a device. No TDLib transfer was measured
+in this environment, so no absolute speed claim is made.
+
+### Not executed (environment)
+
+`./gradlew assembleDebug`, `testDebugUnitTest`, `lint`, Room instrumented tests, and any
+on-device flow (offline PDF/image/video/audio opening, real Telegram download/cancel) were
+**not run**: there is no JDK for Android, no Android SDK/NDK, no emulator, and Maven
+Central/Google Maven are unreachable. Compilation of the Android modules is therefore
+unverified; every Android-side claim in this document is a code-level statement.
