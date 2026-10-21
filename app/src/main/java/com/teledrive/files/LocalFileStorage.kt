@@ -9,6 +9,7 @@ import com.teledrive.core.model.ErrorCategory
 import com.teledrive.core.model.ErrorOperation
 import com.teledrive.core.model.FilenameRules
 import com.teledrive.core.model.LocalFileProbe
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.core.model.UploadStagingRules
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -119,21 +120,36 @@ class LocalFileStorage @Inject constructor(
                 if (storageFull) "Not enough free space to keep this download" else "The download could not be written",
                 error,
             )
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             temporary.delete()
             throw error
         }
     }
 
-    /** Free bytes on the volume that holds app-private storage. */
-    fun availableBytes(): Long = runCatching { StatFs(downloadsDirectory.absolutePath).availableBytes }.getOrDefault(0L)
+    /**
+     * Free bytes on the volume that holds app-private storage. Returns 0 when the
+     * filesystem cannot be queried, which callers treat as "no space": download code
+     * must fail closed rather than start a copy that is guaranteed to run out of room.
+     */
+    fun availableBytes(): Long = try {
+        StatFs(downloadsDirectory.absolutePath).availableBytes
+    } catch (error: Exception) {
+        TeleDriveLog.d("storage.statfs_failed", "error" to error.message)
+        0L
+    }
 
     /** Inspects a recorded offline path without trusting the database flag. */
     fun probe(path: String?, expectedSizeBytes: Long? = null): LocalFileProbe {
         val file = managedFile(path) ?: return LocalFileProbe.Missing
         if (!file.isFile) return LocalFileProbe.Missing
         val readable = file.canRead()
-        val size = runCatching { file.length() }.getOrNull()
+        val size = try {
+            file.length()
+        } catch (error: Exception) {
+            // Unreadable metadata is a real (if unusual) local failure, not "missing".
+            TeleDriveLog.d("storage.probe_failed", "error" to error.message)
+            null
+        }
         return LocalFileProbe(exists = true, sizeBytes = size, readable = readable)
     }
 
@@ -141,13 +157,17 @@ class LocalFileStorage @Inject constructor(
     fun readHeader(path: String?, maxBytes: Int): ByteArray? {
         val file = managedFile(path) ?: return null
         if (!file.isFile || !file.canRead()) return null
-        return runCatching {
+        return try {
             file.inputStream().use { input ->
                 val buffer = ByteArray(maxBytes)
                 val read = input.read(buffer)
                 if (read <= 0) ByteArray(0) else buffer.copyOf(read)
             }
-        }.getOrNull()
+        } catch (error: Exception) {
+            // The PDF preflight reports this as an unreadable file instead of guessing.
+            TeleDriveLog.d("storage.header_read_failed", "error" to error.message)
+            null
+        }
     }
 
     /** Deletes only temporary artifacts for a stable id, never published copies. */

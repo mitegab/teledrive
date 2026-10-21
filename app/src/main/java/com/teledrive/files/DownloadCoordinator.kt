@@ -191,6 +191,17 @@ class DownloadCoordinator @Inject constructor(
         }
     }
 
+    /**
+     * Cancels queued/running downloads and waits for their cleanup to finish.
+     * Destructive callers (cache clearing) must use this so a download cannot
+     * publish bytes after the delete pass.
+     */
+    suspend fun cancelAllNow() {
+        val active = runningJobs.keys.toList()
+        val queued = queueMutex.withLock { queue.map { it.file.stableId }.toList() }
+        (active + queued).distinct().forEach { stableId -> cancelNow(stableId) }
+    }
+
     fun cancel(remoteId: String?) {
         remoteId?.let(::cancelByStableId)
     }
@@ -357,7 +368,7 @@ class DownloadCoordinator @Inject constructor(
             settleCancellation(item, transferId)
             item.deferred.completeExceptionally(cancelled)
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             val appError = error.toDownloadError()
             settleFailure(item, transferId, appError)
             item.deferred.completeExceptionally(DownloadException(appError))

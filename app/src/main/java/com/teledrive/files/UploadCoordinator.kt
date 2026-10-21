@@ -97,12 +97,15 @@ class UploadCoordinator @Inject constructor(
             storedFile
         } catch (cancelled: CancellationException) {
             if (explicitCancellations.remove(transferId.value)) {
-                withContext(NonCancellable) { runCatching { gateway.cancelTransfer(transferId, TransferDirection.UPLOAD) } }
+                withContext(NonCancellable) {
+                    runCatching { gateway.cancelTransfer(transferId, TransferDirection.UPLOAD) }
+                        .onFailure { error -> TeleDriveLog.d("upload.cancel_request_failed", "error" to error.message) }
+                }
             }
             // A worker/lifecycle stop leaves the persisted RUNNING row recoverable. The explicit
             // UI cancellation path settles it after this job has joined.
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             val failure = error.toTransferFailure(running.attempt, ErrorOperation.UPLOAD)
             repository.updateTransfer(TransferStateMachine.reduce(running, failure))
             if (failure.retryable) workScheduler.enqueue()
@@ -149,10 +152,13 @@ class UploadCoordinator @Inject constructor(
             storedFile
         } catch (cancelled: CancellationException) {
             if (explicitCancellations.remove(transfer.id.value)) {
-                withContext(NonCancellable) { runCatching { gateway.cancelTransfer(transfer.id, TransferDirection.UPLOAD) } }
+                withContext(NonCancellable) {
+                    runCatching { gateway.cancelTransfer(transfer.id, TransferDirection.UPLOAD) }
+                        .onFailure { error -> TeleDriveLog.d("upload.cancel_request_failed", "error" to error.message) }
+                }
             }
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             val failure = error.toTransferFailure(running.attempt, ErrorOperation.UPLOAD)
             repository.updateTransfer(TransferStateMachine.reduce(running, failure))
             if (failure.retryable) workScheduler.enqueue()
@@ -173,7 +179,7 @@ class UploadCoordinator @Inject constructor(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             // The upload itself succeeded; losing only the local copy must not fail it.
             TeleDriveLog.d("upload.local_copy_failed", "error" to error.message)
             null
@@ -212,7 +218,7 @@ class UploadCoordinator @Inject constructor(
             if (displayName.second != null && displayName.second != copiedSize) {
                 throw IOException("The selected content changed while it was being staged")
             }
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             UploadStagingRules.removeStagedSource(directory, output.absolutePath)
             throw error
         }

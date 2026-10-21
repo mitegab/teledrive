@@ -70,6 +70,11 @@ class PdfDocument private constructor(
     private var closed = false
 
     init {
+        if (pageCount <= 0) {
+            renderer.close()
+            descriptor.close()
+            throw IOException("This PDF does not contain any pages")
+        }
         val page = renderer.openPage(0)
         try {
             firstPageWidthPoints = page.width.coerceAtLeast(1)

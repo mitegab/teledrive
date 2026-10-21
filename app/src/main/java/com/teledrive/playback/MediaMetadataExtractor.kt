@@ -40,7 +40,9 @@ class MediaMetadataExtractor @Inject constructor(
             val track = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_NUM_TRACKS)
             // Do not keep huge artwork in memory permanently; cap at 2MB
-            val rawArt = runCatching { retriever.embeddedPicture }.getOrNull()
+            val rawArt = runCatching { retriever.embeddedPicture }
+                .onFailure { error -> TeleDriveLog.d("media.artwork_missing", "error" to error.message) }
+                .getOrNull()
             val art = rawArt?.let { bytes ->
                 if (bytes.size > 4 * 1024 * 1024) {
                     // Downsample large artwork

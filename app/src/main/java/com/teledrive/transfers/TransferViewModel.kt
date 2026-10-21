@@ -73,7 +73,7 @@ class TransferViewModel @Inject constructor(
                 repository.updateTransfer(com.teledrive.core.model.TransferStateMachine.reduce(latest.copy(sourcePath = null), com.teledrive.core.model.TransferEvent.Cancel))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.UNKNOWN).userMessage) }
             }
         }
@@ -87,7 +87,7 @@ class TransferViewModel @Inject constructor(
                 else downloadCoordinator.retry(transfer)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (error: Throwable) {
+            } catch (error: Exception) {
                 _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.UNKNOWN).userMessage) }
             }
         }

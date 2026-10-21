@@ -120,6 +120,21 @@ class PlaybackController @Inject constructor(
     fun getPlayer(): ExoPlayer = ensurePlayer()
     fun getSession(): MediaSession? = mediaSession
 
+    /**
+     * Surfaces a failure raised outside the ExoPlayer listener chain (queue building,
+     * resolution, storage) so the player screen shows an actionable error instead of
+     * crashing the UI coroutine.
+     */
+    fun reportFailure(error: Throwable) {
+        val mapped = if (error is PlaybackException) {
+            MediaErrorMapper.fromPlaybackException(error)
+        } else {
+            MediaErrorMapper.fromDownloadError(error.message)
+        }
+        com.teledrive.core.model.TeleDriveLog.d("playback.failed", "error" to error.message)
+        _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = mapped) }
+    }
+
     private fun ensureService() {
         try {
             val intent = android.content.Intent(context, MediaPlaybackService::class.java)
@@ -173,6 +188,10 @@ class PlaybackController @Inject constructor(
                     } else {
                         _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = MediaErrorMapper.fromDownloadError((ensured as? MediaResolution.Unavailable)?.reason)) }
                     }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    // Leaving the player is not a playback failure.
+                    _uiState.update { it.copy(status = PlaybackStatus.IDLE, error = null) }
+                    throw cancelled
                 } catch (e: Exception) {
                     _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = MediaErrorMapper.fromDownloadError(e.message)) }
                 }

@@ -232,7 +232,6 @@ class TdLibJsonGateway(
         TeleDriveLog.d(
             "upload.start",
             "transfer_id" to request.transferId.value,
-            "file_name" to request.displayName,
             "size" to request.sizeBytes,
         )
         val chat = chatResolver.resolve()
@@ -268,7 +267,7 @@ class TdLibJsonGateway(
             return UploadResult(request.transferId, finalFile)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             val mapped = error.asStorageException()
             TeleDriveLog.d("upload.failed", "transfer_id" to request.transferId.value, "error_code" to mapped.code, "error" to mapped.message)
             emitTransfer(request.transferId, 0L, request.sizeBytes, TransferState.FAILED, errorMessage = mapped.message)
@@ -308,7 +307,7 @@ class TdLibJsonGateway(
             return DownloadResult(request.transferId, request.remote, path, request.expectedSizeBytes)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             val mapped = error.asStorageException()
             emitTransfer(request.transferId, 0L, request.expectedSizeBytes, TransferState.FAILED, request.remote, request.tdlibFileId, mapped.message)
             throw mapped
@@ -399,7 +398,7 @@ class TdLibJsonGateway(
             throw StorageGatewayException("TIMEOUT", "Telegram did not respond in time", true, timeout)
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             val mapped = error.asStorageException()
             TeleDriveLog.d("tdlib.request", "type" to type, "outcome" to "error", "error_code" to mapped.code, "error" to mapped.message)
             throw mapped
@@ -414,17 +413,43 @@ class TdLibJsonGateway(
     }
 
     private suspend fun receiveLoop() {
+        var consecutiveFailures = 0
+        var lastLoggedAt = 0L
         while (currentCoroutineContext().isActive) {
             val raw = try {
                 JsonClient.receive(1.0)
             } catch (error: UnsatisfiedLinkError) {
+                TeleDriveLog.d("tdlib.receive_failed", "reason" to "native_library")
                 _authorizationState.value = AuthorizationState.Error(message = "TDLib native library could not be called")
                 return
-            } catch (_: Throwable) {
+            } catch (error: Exception) {
+                // Transient receive errors must not kill the single receive loop, but they
+                // also must not be invisible: log at most once per 30 seconds.
+                consecutiveFailures++
+                val now = System.currentTimeMillis()
+                if (now - lastLoggedAt > 30_000L) {
+                    lastLoggedAt = now
+                    TeleDriveLog.d(
+                        "tdlib.receive_retry",
+                        "failures" to consecutiveFailures,
+                        "error" to error.message,
+                    )
+                }
                 delay(100)
                 continue
             }
-            if (!raw.isNullOrBlank()) runCatching { processIncoming(JSONObject(raw)) }
+            if (consecutiveFailures > 0) {
+                TeleDriveLog.d("tdlib.receive_recovered", "failures" to consecutiveFailures)
+                consecutiveFailures = 0
+            }
+            if (!raw.isNullOrBlank()) {
+                try {
+                    processIncoming(JSONObject(raw))
+                } catch (error: Exception) {
+                    // One malformed update must not stall requests correlated with later updates.
+                    TeleDriveLog.d("tdlib.update_failed", "error" to error.message)
+                }
+            }
         }
     }
 
