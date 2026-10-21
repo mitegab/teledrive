@@ -22,6 +22,26 @@ interface FileIndexRepository {
     /** Marks indexed remote files absent from a completed full history scan as deleted. */
     suspend fun reconcileRemoteFiles(seenRemoteIds: Set<String>) {}
     suspend fun deleteLocalFile(remoteId: String)
+
+    /**
+     * Records a *verified* app-managed offline copy. Must be atomic with respect to
+     * [deleteLocalFile]; both are the only writers of the local availability fields.
+     */
+    suspend fun saveLocalCopy(
+        remoteId: String,
+        localPath: String,
+        sizeBytes: Long?,
+        offlineSinceEpochSeconds: Long,
+    )
+
+    /** Clears every offline record without touching Telegram; returns rows changed. */
+    suspend fun clearAllLocalCopies(): Int = 0
+
+    /**
+     * Settles transfers left active by process death so the UI never shows an
+     * indefinitely "active" download. Returns the number of rows changed.
+     */
+    suspend fun failInterruptedTransfers(message: String): Int = 0
     suspend fun setFolder(remoteId: String, folderId: String?)
     suspend fun setFavorite(remoteId: String, favorite: Boolean)
 

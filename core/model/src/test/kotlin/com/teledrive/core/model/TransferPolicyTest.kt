@@ -116,6 +116,51 @@ class TransferPolicyTest {
     }
 
     @Test
+    fun bulkSelectionDeduplicatesAndSkipsFilesThatCannotBeFetched() {
+        fun file(id: Long, tdlibFileId: Int? = 7, local: LocalAvailability = LocalAvailability.NOT_DOWNLOADED, remote: RemoteAvailability = RemoteAvailability.AVAILABLE) =
+            StoredFile(
+                remote = RemoteMessageId(1L, id),
+                tdlibFileId = tdlibFileId,
+                originalFilename = "file-$id.pdf",
+                mimeType = "application/pdf",
+                sizeBytes = 1024L,
+                savedAtEpochSeconds = id,
+                remoteAvailability = remote,
+                localAvailability = local,
+                localPath = if (local == LocalAvailability.AVAILABLE) "/managed/file-$id" else null,
+            )
+        val selected = listOf(
+            file(1),
+            file(1),
+            file(2, local = LocalAvailability.AVAILABLE),
+            file(3, tdlibFileId = null),
+            file(4, remote = RemoteAvailability.DELETED),
+            file(5),
+        )
+        val candidates = DownloadBatchRules.candidates(selected)
+        assertEquals(listOf("1:1", "1:5"), candidates.map { it.stableId })
+        assertEquals(1, DownloadBatchRules.alreadyOffline(selected).size)
+        assertEquals(2, DownloadBatchRules.skipped(selected).size)
+    }
+
+    @Test
+    fun retryPreservesDownloadedBytesForResumeAndClearsTheFailure() {
+        val failed = transfer(attempt = 1).copy(
+            state = TransferState.FAILED,
+            bytesTransferred = 4096L,
+            totalBytes = 8192L,
+            errorMessage = "Network error",
+            retryAtEpochSeconds = 99L,
+        )
+        val retried = step(failed, TransferEvent.Retry)
+        assertEquals(TransferState.QUEUED, retried.state)
+        assertEquals(2, retried.attempt)
+        assertEquals(4096L, retried.bytesTransferred)
+        assertNull(retried.errorMessage)
+        assertNull(retried.retryAtEpochSeconds)
+    }
+
+    @Test
     fun downloadLimitsRejectUnboundedConcurrency() {
         runCatching { DownloadLimits(maxConcurrentTransfers = 0) }.also { assertTrue(it.isFailure) }
         runCatching { DownloadLimits(maxConcurrentTransfers = 50) }.also { assertTrue(it.isFailure) }

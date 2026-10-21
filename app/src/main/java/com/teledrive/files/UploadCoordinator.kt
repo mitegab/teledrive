@@ -6,8 +6,10 @@ import android.provider.OpenableColumns
 import com.teledrive.core.domain.FileIndexRepository
 import com.teledrive.core.domain.TelegramStorageGateway
 import com.teledrive.core.domain.UploadRequest
+import com.teledrive.core.model.ErrorOperation
 import com.teledrive.core.model.FilenameRules
 import com.teledrive.core.model.StoredFile
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.core.model.Transfer
 import com.teledrive.core.model.TransferDirection
 import com.teledrive.core.model.TransferEvent
@@ -47,7 +49,8 @@ class UploadCoordinator @Inject constructor(
         explicitCancellations += transferId.value
         try {
             job.cancel(CancellationException("Transfer cancelled by user"))
-            runCatching { job.join() }
+            // Let cancellation propagate to the caller; no silent swallowing here.
+            job.join()
         } finally {
             explicitCancellations.remove(transferId.value)
         }
@@ -100,7 +103,7 @@ class UploadCoordinator @Inject constructor(
             // UI cancellation path settles it after this job has joined.
             throw cancelled
         } catch (error: Throwable) {
-            val failure = error.toTransferFailure(running.attempt)
+            val failure = error.toTransferFailure(running.attempt, ErrorOperation.UPLOAD)
             repository.updateTransfer(TransferStateMachine.reduce(running, failure))
             if (failure.retryable) workScheduler.enqueue()
             throw error
@@ -150,7 +153,7 @@ class UploadCoordinator @Inject constructor(
             }
             throw cancelled
         } catch (error: Throwable) {
-            val failure = error.toTransferFailure(running.attempt)
+            val failure = error.toTransferFailure(running.attempt, ErrorOperation.UPLOAD)
             repository.updateTransfer(TransferStateMachine.reduce(running, failure))
             if (failure.retryable) workScheduler.enqueue()
             throw error
@@ -170,7 +173,9 @@ class UploadCoordinator @Inject constructor(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
+            // The upload itself succeeded; losing only the local copy must not fail it.
+            TeleDriveLog.d("upload.local_copy_failed", "error" to error.message)
             null
         }
         return if (managedPath != null) {

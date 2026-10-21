@@ -23,6 +23,7 @@ data class StoredFileEntity(
     val remoteAvailability: String,
     val localAvailability: String,
     val localPath: String?,
+    val offlineSinceEpochSeconds: Long?,
 )
 
 @Entity(
