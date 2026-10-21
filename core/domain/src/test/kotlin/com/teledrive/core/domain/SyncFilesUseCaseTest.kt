@@ -220,6 +220,7 @@ private class FakeRepository : FileIndexRepository {
         reconciledRemoteIds += seenRemoteIds
     }
     override suspend fun deleteLocalFile(remoteId: String) = Unit
+    override suspend fun saveLocalCopy(remoteId: String, localPath: String, sizeBytes: Long?, offlineSinceEpochSeconds: Long) = Unit
     override suspend fun setFolder(remoteId: String, folderId: String?) = Unit
     override suspend fun setFavorite(remoteId: String, favorite: Boolean) = Unit
     override suspend fun createFolder(folder: Folder) = Unit

@@ -6,8 +6,10 @@ import android.provider.OpenableColumns
 import com.teledrive.core.domain.FileIndexRepository
 import com.teledrive.core.domain.TelegramStorageGateway
 import com.teledrive.core.domain.UploadRequest
+import com.teledrive.core.model.ErrorOperation
 import com.teledrive.core.model.FilenameRules
 import com.teledrive.core.model.StoredFile
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.core.model.Transfer
 import com.teledrive.core.model.TransferDirection
 import com.teledrive.core.model.TransferEvent
@@ -47,7 +49,8 @@ class UploadCoordinator @Inject constructor(
         explicitCancellations += transferId.value
         try {
             job.cancel(CancellationException("Transfer cancelled by user"))
-            runCatching { job.join() }
+            // Let cancellation propagate to the caller; no silent swallowing here.
+            job.join()
         } finally {
             explicitCancellations.remove(transferId.value)
         }
@@ -94,13 +97,16 @@ class UploadCoordinator @Inject constructor(
             storedFile
         } catch (cancelled: CancellationException) {
             if (explicitCancellations.remove(transferId.value)) {
-                withContext(NonCancellable) { runCatching { gateway.cancelTransfer(transferId, TransferDirection.UPLOAD) } }
+                withContext(NonCancellable) {
+                    runCatching { gateway.cancelTransfer(transferId, TransferDirection.UPLOAD) }
+                        .onFailure { error -> TeleDriveLog.d("upload.cancel_request_failed", "error" to error.message) }
+                }
             }
             // A worker/lifecycle stop leaves the persisted RUNNING row recoverable. The explicit
             // UI cancellation path settles it after this job has joined.
             throw cancelled
-        } catch (error: Throwable) {
-            val failure = error.toTransferFailure(running.attempt)
+        } catch (error: Exception) {
+            val failure = error.toTransferFailure(running.attempt, ErrorOperation.UPLOAD)
             repository.updateTransfer(TransferStateMachine.reduce(running, failure))
             if (failure.retryable) workScheduler.enqueue()
             throw error
@@ -146,11 +152,14 @@ class UploadCoordinator @Inject constructor(
             storedFile
         } catch (cancelled: CancellationException) {
             if (explicitCancellations.remove(transfer.id.value)) {
-                withContext(NonCancellable) { runCatching { gateway.cancelTransfer(transfer.id, TransferDirection.UPLOAD) } }
+                withContext(NonCancellable) {
+                    runCatching { gateway.cancelTransfer(transfer.id, TransferDirection.UPLOAD) }
+                        .onFailure { error -> TeleDriveLog.d("upload.cancel_request_failed", "error" to error.message) }
+                }
             }
             throw cancelled
-        } catch (error: Throwable) {
-            val failure = error.toTransferFailure(running.attempt)
+        } catch (error: Exception) {
+            val failure = error.toTransferFailure(running.attempt, ErrorOperation.UPLOAD)
             repository.updateTransfer(TransferStateMachine.reduce(running, failure))
             if (failure.retryable) workScheduler.enqueue()
             throw error
@@ -170,7 +179,9 @@ class UploadCoordinator @Inject constructor(
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Throwable) {
+        } catch (error: Exception) {
+            // The upload itself succeeded; losing only the local copy must not fail it.
+            TeleDriveLog.d("upload.local_copy_failed", "error" to error.message)
             null
         }
         return if (managedPath != null) {
@@ -207,7 +218,7 @@ class UploadCoordinator @Inject constructor(
             if (displayName.second != null && displayName.second != copiedSize) {
                 throw IOException("The selected content changed while it was being staged")
             }
-        } catch (error: Throwable) {
+        } catch (error: Exception) {
             UploadStagingRules.removeStagedSource(directory, output.absolutePath)
             throw error
         }

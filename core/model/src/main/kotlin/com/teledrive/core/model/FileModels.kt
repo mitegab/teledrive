@@ -46,6 +46,8 @@ data class StoredFile(
     val remoteAvailability: RemoteAvailability = RemoteAvailability.UNKNOWN,
     val localAvailability: LocalAvailability = LocalAvailability.NOT_DOWNLOADED,
     val localPath: String? = null,
+    /** Wall-clock time the verified offline copy was published; null for cache-era records. */
+    val offlineSinceEpochSeconds: Long? = null,
 ) {
     val stableId: String get() = remote.value
     val kind: FileKind get() = FileKindDetector.detect(originalFilename, mimeType)
@@ -81,6 +83,8 @@ data class FileQuery(
     val kinds: Set<FileKind> = emptySet(),
     val folderId: String? = null,
     val favoritesOnly: Boolean = false,
+    /** Restricts results to verified app-managed offline copies. */
+    val localOnly: Boolean = false,
     val minSizeBytes: Long? = null,
     val maxSizeBytes: Long? = null,
     val minSavedAtEpochSeconds: Long? = null,

@@ -29,8 +29,21 @@ interface StoredFileDao {
     @Query("UPDATE stored_files SET favorite = :favorite WHERE stableId = :stableId")
     suspend fun setFavorite(stableId: String, favorite: Boolean)
 
-    @Query("UPDATE stored_files SET localAvailability = 'NOT_DOWNLOADED', localPath = NULL WHERE stableId = :stableId")
+    @Query("UPDATE stored_files SET localAvailability = 'NOT_DOWNLOADED', localPath = NULL, offlineSinceEpochSeconds = NULL WHERE stableId = :stableId")
     suspend fun clearLocalCopy(stableId: String)
+
+    @Query(
+        "UPDATE stored_files SET localAvailability = 'AVAILABLE', localPath = :localPath, " +
+            "sizeBytes = COALESCE(:sizeBytes, sizeBytes), offlineSinceEpochSeconds = :offlineSince " +
+            "WHERE stableId = :stableId"
+    )
+    suspend fun saveLocalCopy(stableId: String, localPath: String, sizeBytes: Long?, offlineSince: Long): Int
+
+    @Query("UPDATE stored_files SET localAvailability = 'NOT_DOWNLOADED', localPath = NULL, offlineSinceEpochSeconds = NULL WHERE localPath IS NOT NULL OR localAvailability = 'AVAILABLE'")
+    suspend fun clearAllLocalCopies(): Int
+
+    @Query("SELECT * FROM stored_files WHERE localAvailability = 'AVAILABLE' ORDER BY offlineSinceEpochSeconds DESC, savedAtEpochSeconds DESC")
+    suspend fun getOfflineFiles(): List<StoredFileEntity>
 
     @Query("UPDATE stored_files SET remoteAvailability = :availability WHERE stableId = :stableId")
     suspend fun setRemoteAvailability(stableId: String, availability: String)
@@ -70,6 +83,12 @@ interface TransferDao {
 
     @Query("SELECT * FROM transfers WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): TransferEntity?
+
+    @Query(
+        "UPDATE transfers SET state = 'FAILED', errorMessage = :message, retryAtEpochSeconds = NULL " +
+            "WHERE state IN ('QUEUED', 'PREPARING', 'RUNNING', 'VERIFYING')"
+    )
+    suspend fun failInterrupted(message: String): Int
 }
 
 @Dao

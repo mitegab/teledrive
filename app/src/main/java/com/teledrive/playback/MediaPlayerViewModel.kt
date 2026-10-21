@@ -37,6 +37,10 @@ class MediaPlayerViewModel @Inject constructor(
             _loading.value = true
             try {
                 controller.playSingle(stableId, allIds)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                controller.reportFailure(error)
             } finally {
                 _loading.value = false
             }
@@ -44,7 +48,15 @@ class MediaPlayerViewModel @Inject constructor(
     }
 
     fun playAt(index: Int) {
-        viewModelScope.launch { controller.playQueueItem(index) }
+        viewModelScope.launch {
+            try {
+                controller.playQueueItem(index)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                controller.reportFailure(error)
+            }
+        }
     }
 
     fun togglePlayPause() {
