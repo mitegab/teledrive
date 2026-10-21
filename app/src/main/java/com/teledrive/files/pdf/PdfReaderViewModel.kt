@@ -518,6 +518,7 @@ class PdfReaderViewModel @Inject constructor(
                 for (page in 0 until doc.pageCount) {
                     currentCoroutineContext().ensureActive()
                     val hits = withContext(Dispatchers.IO) { doc.searchPage(page, query) }
+                    currentCoroutineContext().ensureActive()
                     if (hits.matchCount > 0) {
                         pages += PdfSearchPageResult(page, hits.matchCount)
                         bounds[page] = hits.bounds
