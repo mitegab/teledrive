@@ -68,18 +68,57 @@ private fun TransferRow(transfer: Transfer, onCancel: (Transfer) -> Unit, onRetr
                     Text(transfer.filename, style = MaterialTheme.typography.titleMedium)
                     Text("${transfer.direction.name.lowercase().replaceFirstChar { it.uppercase() }} · ${transfer.state.label()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (transfer.state == TransferState.QUEUED || transfer.state == TransferState.RUNNING) {
+                if (transfer.state.isActive) {
                     IconButton(onClick = { onCancel(transfer) }) { Icon(Icons.Rounded.Cancel, contentDescription = "Cancel transfer") }
                 }
             }
-            if (transfer.state == TransferState.RUNNING) {
-                LinearProgressIndicator(progress = { transfer.progress ?: 0f }, modifier = Modifier.fillMaxWidth())
-                Text("${transfer.bytesTransferred.formatBytes()} of ${transfer.totalBytes.formatBytes()}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when (transfer.state) {
+                TransferState.QUEUED, TransferState.PREPARING -> {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Text(
+                        if (transfer.state == TransferState.QUEUED) "Waiting for a free transfer slot" else "Preparing the transfer",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TransferState.RUNNING, TransferState.VERIFYING -> {
+                    LinearProgressIndicator(progress = { transfer.progress ?: 0f }, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        if (transfer.state == TransferState.VERIFYING) {
+                            "Checking the downloaded file · ${transfer.bytesTransferred.formatBytes()}"
+                        } else {
+                            "${transfer.bytesTransferred.formatBytes()} of ${transfer.totalBytes.formatBytes()}"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                else -> Unit
             }
             if (transfer.state == TransferState.FAILED) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (transfer.errorMessage != null) Text(transfer.errorMessage!!, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            transfer.errorMessage ?: "The transfer failed",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        val retryAt = transfer.retryAtEpochSeconds
+                        if (retryAt != null) {
+                            Text(
+                                "Automatic retry is scheduled; you can also retry now.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     IconButton(onClick = { onRetry(transfer) }) { Icon(Icons.Rounded.Refresh, contentDescription = "Retry transfer") }
+                }
+            }
+            if (transfer.state == TransferState.CANCELED) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Canceled", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = { onRetry(transfer) }) { Icon(Icons.Rounded.Refresh, contentDescription = "Try again") }
                 }
             }
         }
