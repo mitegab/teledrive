@@ -12,11 +12,12 @@ fun Iterable<StoredFile>.queryFiles(query: FileQuery): List<StoredFile> {
         val kindMatches = query.kinds.isEmpty() || file.kind in query.kinds
         val folderMatches = query.folderId == null || file.folderId == query.folderId
         val favoriteMatches = !query.favoritesOnly || file.favorite
+        val localMatches = !query.localOnly || file.localAvailability == LocalAvailability.AVAILABLE
         val sizeMatches = (query.minSizeBytes == null || (file.sizeBytes ?: Long.MIN_VALUE) >= query.minSizeBytes) &&
             (query.maxSizeBytes == null || (file.sizeBytes ?: Long.MAX_VALUE) <= query.maxSizeBytes)
         val dateMatches = (query.minSavedAtEpochSeconds == null || file.savedAtEpochSeconds >= query.minSavedAtEpochSeconds) &&
             (query.maxSavedAtEpochSeconds == null || file.savedAtEpochSeconds <= query.maxSavedAtEpochSeconds)
-        textMatches && kindMatches && folderMatches && favoriteMatches && sizeMatches && dateMatches
+        textMatches && kindMatches && folderMatches && favoriteMatches && localMatches && sizeMatches && dateMatches
     }
 }
 
