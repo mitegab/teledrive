@@ -14,6 +14,8 @@ enum class ErrorCategory {
     REQUEST_TIMEOUT,
     AUTHENTICATION_REQUIRED,
     SESSION_EXPIRED,
+    /** The Telegram session exists but is not usable yet (starting, reconnecting, closing). */
+    SESSION_NOT_READY,
     RATE_LIMITED,
     ACCESS_DENIED,
     REMOTE_FILE_MISSING,
@@ -73,7 +75,9 @@ data class AppError(
         append("error category=").append(category.name)
         append(" operation=").append(operation.name)
         append(" retryable=").append(retryable)
-        diagnosticCode?.let { append(" code=").append(TeleDriveLog.scrub("code", it)) }
+        // Not "code=": that key is redacted for authentication codes, which used to hide the
+        // diagnostic classification of every failure in the log.
+        diagnosticCode?.let { append(" error_code=").append(TeleDriveLog.scrub("error_code", it)) }
         retryAfterSeconds?.let { append(" retry_after=").append(it) }
         diagnosticCause?.let { append(" cause=").append(TeleDriveLog.scrub("cause", redactSecrets(it))) }
     }
@@ -91,13 +95,16 @@ object AppErrorMessages {
         ErrorCategory.REQUEST_TIMEOUT -> "Telegram took too long to respond. Try again in a moment."
         ErrorCategory.AUTHENTICATION_REQUIRED -> "Your Telegram session needs attention before remote files can be accessed."
         ErrorCategory.SESSION_EXPIRED -> "Your Telegram session has expired. Connect again to continue."
+        ErrorCategory.SESSION_NOT_READY -> "Telegram is still getting ready in TeleDrive. Try again in a moment."
         ErrorCategory.RATE_LIMITED -> retryAfterSeconds?.takeIf { it > 0 }
             ?.let { "Telegram asked TeleDrive to wait $it seconds before retrying." }
             ?: "Telegram asked TeleDrive to slow down. Try again shortly."
         ErrorCategory.ACCESS_DENIED -> "Telegram didn't allow this action for your account."
         ErrorCategory.REMOTE_FILE_MISSING -> "This file is no longer available in Telegram. A copy saved on this device stays usable."
-        ErrorCategory.DOWNLOAD_FAILED -> "Download failed. Check your connection and try again."
-        ErrorCategory.UPLOAD_FAILED -> "Upload failed. Check your connection and try again."
+        // A transfer can fail for storage, verification, session or server reasons. Blaming
+        // the connection here made every local problem look like a network outage.
+        ErrorCategory.DOWNLOAD_FAILED -> "The download didn't finish. Try again."
+        ErrorCategory.UPLOAD_FAILED -> "The upload didn't finish. Try again."
         ErrorCategory.TRANSFER_CANCELED -> "You canceled this transfer."
         ErrorCategory.STORAGE_FULL -> "Not enough storage to save this file. Free up space and retry."
         ErrorCategory.LOCAL_FILE_MISSING -> "The saved copy is no longer on this device. Download it again to open it offline."
@@ -213,8 +220,50 @@ object AppErrorMapper {
             normalized == "LOCAL_FILE_MISSING" ->
                 category(ErrorCategory.LOCAL_FILE_MISSING, operation, retryable = true, code = code, message = message)
 
-            normalized == "FILE_REFERENCE_EXPIRED" || normalized == "DOWNLOAD_PATH_MISSING" || normalized == "NOT_READY" || normalized == "TDLIB_NOT_STARTED" ->
-                category(transferCategory(operation), operation, retryable = true, code = code, message = message)
+            // A session that is not ready is not a network outage and not a failed download:
+            // waiting or reconnecting must be described as such so the retry is meaningful.
+            normalized == "NOT_READY" || normalized == "TDLIB_NOT_STARTED" ->
+                category(ErrorCategory.SESSION_NOT_READY, operation, retryable = true, code = code, message = message)
+
+            normalized == "NOT_AUTHENTICATED" ->
+                AppError(
+                    category = ErrorCategory.AUTHENTICATION_REQUIRED,
+                    operation = operation,
+                    userMessage = "Log in to Telegram to continue.",
+                    retryable = false,
+                    diagnosticCode = code,
+                    diagnosticCause = sanitizeCause(message),
+                )
+
+            // Telegram's file reference is intentionally short-lived; re-reading the message
+            // makes the next attempt work, so the message must promise exactly that.
+            normalized == "FILE_REFERENCE_EXPIRED" ->
+                transferFailure(
+                    operation,
+                    userMessage = "Telegram's link to this file expired. Try again to fetch it fresh.",
+                    code = code,
+                    message = message,
+                )
+
+            // TDLib reported a completed download but could not point at the bytes. That is a
+            // failed hand-off on this device, not a connectivity problem.
+            normalized == "DOWNLOAD_PATH_MISSING" ->
+                transferFailure(
+                    operation,
+                    userMessage = "Telegram finished downloading but didn't provide the file on this device. Try again.",
+                    code = code,
+                    message = message,
+                )
+
+            // Two index rows can point at the same Telegram file (the same photo forwarded
+            // twice) and TDLib allows one active download per file id.
+            normalized == "TRANSFER_ALREADY_ACTIVE" ->
+                transferFailure(
+                    operation,
+                    userMessage = "This file is already being downloaded. Try again when it finishes.",
+                    code = code,
+                    message = message,
+                )
 
             normalized == "CHAT_NOT_FOUND" || normalized == "SAVED_MESSAGES_NOT_FOUND" ->
                 category(ErrorCategory.SAVED_MESSAGES_UNAVAILABLE, operation, retryable = true, code = code, message = message)
@@ -306,6 +355,25 @@ object AppErrorMapper {
 
     private fun transferCategory(operation: ErrorOperation): ErrorCategory =
         if (operation == ErrorOperation.UPLOAD) ErrorCategory.UPLOAD_FAILED else ErrorCategory.DOWNLOAD_FAILED
+
+    /**
+     * A transfer failure with a cause-specific sentence. The category still says whether the
+     * upload or the download failed; only [userMessage] carries the concrete reason, so the UI
+     * never falls back to a generic "try again" when the app already knows what went wrong.
+     */
+    private fun transferFailure(
+        operation: ErrorOperation,
+        userMessage: String,
+        code: String?,
+        message: String?,
+    ): AppError = AppError(
+        category = transferCategory(operation),
+        operation = operation,
+        userMessage = userMessage,
+        retryable = true,
+        diagnosticCode = code,
+        diagnosticCause = sanitizeCause(message),
+    )
 
     private fun category(
         category: ErrorCategory,

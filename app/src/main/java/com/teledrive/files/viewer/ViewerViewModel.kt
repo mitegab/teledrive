@@ -9,6 +9,7 @@ import com.teledrive.core.model.ErrorOperation
 import com.teledrive.core.model.StoredFile
 import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.FileOpenRouter
+import com.teledrive.files.toDownloadAppError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
@@ -53,7 +54,8 @@ class ViewerViewModel @Inject constructor(
                     _state.value = ViewerState()
                     throw cancelled
                 } catch (error: Exception) {
-                    _state.value = ViewerState(file = file, error = error.toAppError(ErrorOperation.DOWNLOAD).userMessage)
+                    // downloads.download() carries a precise AppError; never re-derive it.
+                    _state.value = ViewerState(file = file, error = error.toDownloadAppError().userMessage)
                 }
             }
         }

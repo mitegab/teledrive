@@ -7,7 +7,7 @@ object MediaErrorMapper {
         message?.contains("no longer exposes", ignoreCase = true) == true -> PlaybackError(PlaybackErrorType.MISSING_FILE, "Telegram no longer has this file. It may have been deleted.", false)
         message?.contains("not a readable", ignoreCase = true) == true -> PlaybackError(PlaybackErrorType.MISSING_FILE, "The downloaded file is missing.", false)
         code == "NETWORK_ERROR" || message?.contains("network", true) == true -> PlaybackError(PlaybackErrorType.NETWORK_ERROR, "Download failed due to a network problem. Try again.", true)
-        code == "TIMEOUT" -> PlaybackError(PlaybackErrorType.NETWORK_ERROR, "The download timed out. Check your connection and retry.", true)
+        code == "TIMEOUT" -> PlaybackError(PlaybackErrorType.NETWORK_ERROR, "The download timed out. Try again.", true)
         else -> PlaybackError(PlaybackErrorType.DOWNLOAD_FAILED, message ?: "Download failed. Try again.", retryable = code != null)
     }
 

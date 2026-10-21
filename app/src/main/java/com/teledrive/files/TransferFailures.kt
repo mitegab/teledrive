@@ -46,9 +46,31 @@ internal fun Throwable.toTransferFailure(
  */
 internal fun Throwable.toTransferAppError(operation: ErrorOperation): AppError = when (this) {
     is CancellationException -> AppErrorMapper.cancellation(operation)
+    // The coordinator already classified this failure. Re-classifying the wrapper would
+    // replace a precise reason (storage, corrupt bytes, session) with a generic sentence.
+    is DownloadException -> error
     is StorageGatewayException -> toAppError(operation)
     is LocalStorageException -> toAppError(operation)
     is IOException -> AppErrorMapper.fromThrowable(this, operation)
     is SecurityException -> AppErrorMapper.fromThrowable(this, operation, ErrorCategory.ACCESS_DENIED, retryable = false)
     else -> AppErrorMapper.fromThrowable(this, operation, ErrorCategory.UNKNOWN, retryable = false)
 }
+
+/**
+ * Error raised for a completed download, with the coordinator's own classification preserved.
+ * Screens that start a download must use this instead of the generic domain mapper, or every
+ * non-network cause is shown as a network failure.
+ */
+fun Throwable.toDownloadAppError(): AppError = toTransferAppError(ErrorOperation.DOWNLOAD)
+
+/**
+ * Opening a verified local copy can fail on its own (no handler installed, provider or file
+ * removed). It must never be reported as a download failure.
+ */
+fun localOpenFailure(): AppError = AppError(
+    category = ErrorCategory.LOCAL_FILE_INACCESSIBLE,
+    operation = ErrorOperation.STORAGE,
+    userMessage = "TeleDrive couldn't open the saved copy. The file may have been removed, or no installed app can open this format.",
+    retryable = false,
+    diagnosticCode = "OPEN_FAILED",
+)

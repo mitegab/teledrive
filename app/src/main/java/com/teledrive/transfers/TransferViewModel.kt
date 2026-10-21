@@ -13,6 +13,7 @@ import com.teledrive.core.model.TransferProgress
 import com.teledrive.core.model.TransferState
 import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.UploadCoordinator
+import com.teledrive.files.toDownloadAppError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -88,7 +89,13 @@ class TransferViewModel @Inject constructor(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                _state.update { it.copy(errorMessage = error.toAppError(ErrorOperation.UNKNOWN).userMessage) }
+                // The download coordinator's classification is more specific than UNKNOWN.
+                val appError = if (transfer.direction == TransferDirection.DOWNLOAD) {
+                    error.toDownloadAppError()
+                } else {
+                    error.toAppError(ErrorOperation.UNKNOWN)
+                }
+                _state.update { it.copy(errorMessage = appError.userMessage) }
             }
         }
     }
