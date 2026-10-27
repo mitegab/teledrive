@@ -1,56 +1,108 @@
 # TeleDrive
 
-TeleDrive is an Android file-manager experience backed by a user's Telegram Saved Messages. It is not a Telegram bot and it does not run a custom cloud backend.
+TeleDrive is an Android file manager backed directly by your Telegram **Saved Messages**. 
 
-> **Status:** active implementation. Live Telegram behavior is gated by the developer's own TDLib native build and API credentials; see the documentation before running the app.
+It connects to Telegram as a native client using [TDLib](https://core.telegram.org/tdlib) (Telegram Database Library). It is **not** a bot and requires **no custom server or intermediary cloud backend**—your device talks directly to Telegram’s servers.
 
-## Repository map
+> **Status:** Under active development. To run the app against a live Telegram account, you must build the native TDLib binaries and provide your own Telegram API credentials.
 
-- `app/` — Compose UI, navigation, Hilt composition root, and Android integration.
-- `core/model/` — platform-independent file, folder, transfer, and authorization models.
-- `core/domain/` — gateway contracts, deterministic file/search/transfer/synchronization rules, and use cases.
-- `core/database/` — Room local index and transactional metadata repository.
-- `core/telegram/` — TDLib JSON-Java gateway, authorization, Saved Messages mapping, and real transfer calls.
-- `docs/IMPLEMENTATION_PLAN.md` — iterative delivery plan and validation gates.
-- `docs/TELEGRAM_INTEGRATION.md` — verified TDLib APIs, native build requirements, and integration limitations.
-- `PRIVACY.md` — data flows, local persistence, cache and deletion behavior.
+---
 
-## Local setup
+## Key Highlights
 
-1. Install JDK 17, Android SDK platform 36, Android build tools, Android NDK, CMake 3.22.1, and the tools required by TDLib's official Android build (including OpenSSL build prerequisites).
-2. Create a Telegram application at [my.telegram.org](https://my.telegram.org). Do not use a bot token or a sample API ID for distribution.
-3. Copy `local.properties.example` to `local.properties` and add your own `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`. This file is ignored by Git.
-4. Build the pinned official TDLib source and native libraries:
+- **Telegram as Storage:** Uploads, downloads, and reads files directly from your Telegram Saved Messages chat.
+- **Client-Side Virtual Folders:** Provides a traditional file/folder tree and favorites system by synchronizing lightweight, versioned metadata records.
+- **Reliable Transfers:** Backed by Android Jetpack WorkManager and foreground services for upload/download resumption and retry controls.
+- **Storage Access Framework (SAF):** Full integration with Android's native file picker, share sheet, and document providers.
+- **Offline Cache:** Indexed locally with Room for instant search, offline browsing, and metadata access.
 
-   ```bash
-   ./tools/build-tdlib-android.sh
-   ```
+---
 
-5. Open the project in Android Studio or run the Gradle tasks below.
+## Project Structure
 
-The native build is deliberately not replaced with a mock. Until it has run, the app can compile/launch its onboarding UI but a Telegram connection reports a clear native-library configuration error.
+```text
+├── app/                  # UI (Jetpack Compose), Navigation, and Hilt DI root
+├── core/
+│   ├── model/           # Pure Kotlin data models (Files, Folders, Transfers, Auth)
+│   ├── domain/          # Use cases, gateway interfaces, sync & search logic
+│   ├── database/        # Room database, DAOs, and local metadata caching
+│   └── telegram/        # TDLib JNI bindings, JSON-Java bridge, and Telegram gateway
+├── docs/
+│   ├── IMPLEMENTATION_PLAN.md    # Iterative milestones and validation criteria
+│   └── TELEGRAM_INTEGRATION.md   # TDLib API details, limitations, and build requirements
+└── PRIVACY.md           # Data retention, local storage policies, and credential security
+```
 
-## Validation
+---
+
+## Prerequisites
+
+Before building, ensure you have installed:
+
+- **JDK 17**
+- **Android SDK Platform 36** & Android Build Tools
+- **Android NDK** & **CMake 3.22.1+**
+- Build tools required by TDLib for Android (e.g., `gperf`, `openssl`, `ninja`, Python 3)
+
+---
+
+## Getting Started
+
+### 1. Obtain Telegram API Credentials
+1. Log in to [my.telegram.org](https://my.telegram.org) with your Telegram account.
+2. Navigate to **API development tools** and create a new application.
+3. Save your `api_id` and `api_hash`. *(Do not use a bot token).*
+
+### 2. Configure Local Properties
+Create a `local.properties` file in the project root (or copy `local.properties.example`):
+
+```properties
+sdk.dir=/path/to/your/android/sdk
+TELEGRAM_API_ID=your_api_id_here
+TELEGRAM_API_HASH=your_api_hash_here
+```
+> `local.properties` is already excluded in `.gitignore`. Never commit API keys or session data.
+
+### 3. Build TDLib Native Binaries
+TeleDrive requires official TDLib native libraries compiled for Android architectures:
 
 ```bash
-./gradlew testDebugUnitTest
-./gradlew lintDebug
+./tools/build-tdlib-android.sh
+```
+
+*(Note: The project does not include prebuilt native binaries. Without this step, the app compiles to the onboarding screen but will fail when initializing the Telegram client.)*
+
+### 4. Build and Run
+Open the repository in Android Studio or build via the Gradle wrapper:
+
+```bash
 ./gradlew assembleDebug
-# with an emulator/device:
+```
+The output APK will be generated at `app/build/outputs/apk/debug/app-debug.apk`.
+
+---
+
+## Testing & Quality Assurance
+
+Run the test suite and static analysis:
+
+```bash
+# Unit tests (Gateway mocks, Domain logic, Metadata sync)
+./gradlew testDebugUnitTest
+
+# Code style and Android Lint
+./gradlew lintDebug
+
+# Connected instrumented tests (requires connected device/emulator)
 ./gradlew connectedDebugAndroidTest
 ```
 
-The debug APK, when the Android toolchain is available, is produced at `app/build/outputs/apk/debug/app-debug.apk`.
+---
 
-## Current verification status
+## Architecture & Important Limitations
 
-The repository contains the real gateway boundary, TDLib authorization flow, Saved Messages indexing, SAF upload/download/export/open/share flows, Room metadata, virtual-folder metadata synchronization, persisted transfers, retry controls, WorkManager resumption, settings, and deterministic fake-gateway tests. This checkout has **not** been authenticated against a live Telegram account.
-
-The sandbox has no Android SDK/NDK and cannot fetch the Gradle distribution from its restricted network, so no Gradle test, lint result, or APK is claimed here. Run the validation commands above on a machine with the documented Android toolchain. Do not treat fake-gateway tests as live Telegram verification.
-
-## Important product limitations
-
-- Saved Messages is ordinary Telegram cloud data; TeleDrive does not claim end-to-end encryption or a Telegram storage quota.
-- Virtual folders and favorites are TeleDrive metadata. They use reserved, versioned append-only records and are eventual/best-effort across devices, not a server-side filesystem.
-- Live authorization/upload/download testing requires a developer-owned Telegram account and credentials. Never commit credentials, session state, authentication codes, or personal files.
-- Android may stop background work. Transfer behavior follows current WorkManager and foreground-service rules rather than promising indefinite execution.
+- **Telegram Cloud Storage:** Saved Messages is standard Telegram cloud storage (server-side encrypted, **not** end-to-end encrypted like Secret Chats). Files are subject to Telegram's standard single-file size limits (2 GB for regular users, 4 GB for Telegram Premium).
+- **Virtual Directory System:** Telegram has no native concept of nested directories. TeleDrive simulates folders using client-side metadata tags. Syncing between different devices is eventual and best-effort.
+- **Background Execution:** While transfers use Android `WorkManager` and foreground notifications, the Android OS may still restrict long-running background tasks under battery-saver restrictions.
+- **Authentication Safety:** Never commit database files, active session databases (`tdlib/`), or SMS/2FA codes to version control.
+```
