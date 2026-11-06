@@ -54,6 +54,8 @@ data class PlaybackItem(
     val album: String? = null,
     val artworkPath: String? = null,
     val durationMs: Long? = null,
+    /** Embedded genre tag when the file carries one; used by the playlist mood/genre filters. */
+    val genre: String? = null,
 )
 
 data class PlaybackQueueState(
@@ -84,6 +86,8 @@ data class PlayerUiState(
     val isBuffering: Boolean = false,
     val isSeeking: Boolean = false,
     val downloadProgress: Float? = null,
+    /** Player output volume, 0f..1f. Persisted across sessions by [PlaybackProgressStore]. */
+    val volume: Float = 1f,
 )
 
 fun formatTime(ms: Long): String {

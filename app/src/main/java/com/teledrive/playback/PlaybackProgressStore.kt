@@ -2,6 +2,7 @@ package com.teledrive.playback
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -17,6 +18,14 @@ private val Context.playbackPrefs by preferencesDataStore(name = "playback_progr
 class PlaybackProgressStore @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
+    /** Last volume the user chose, so the timeline slider comes back where they left it. */
+    suspend fun getVolume(): Float =
+        context.playbackPrefs.data.map { it[VOLUME_KEY] ?: 1f }.first()
+
+    suspend fun setVolume(volume: Float) {
+        context.playbackPrefs.edit { prefs -> prefs[VOLUME_KEY] = volume.coerceIn(0f, 1f) }
+    }
+
     fun observePosition(stableId: String): Flow<Long> =
         context.playbackPrefs.data.map { it[longPreferencesKey(posKey(stableId))] ?: 0L }
 
@@ -52,4 +61,8 @@ class PlaybackProgressStore @Inject constructor(
 
     private fun posKey(id: String) = "pos_${id.replace(":", "_")}"
     private fun durKey(id: String) = "dur_${id.replace(":", "_")}"
+
+    private companion object {
+        val VOLUME_KEY = floatPreferencesKey("player_volume")
+    }
 }

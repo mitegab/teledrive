@@ -61,33 +61,37 @@ fun AuthenticatedNavHost(sessionViewModel: SessionViewModel, settingsViewModel: 
     val playerUi by playerVM.uiState.collectAsStateWithLifecycle()
     Scaffold(
         bottomBar = {
-            Column {
-                MiniPlayer(
-                    onExpand = {
-                        val current = playerUi.queue.currentItem
-                        if (current != null && current.file.kind == com.teledrive.core.model.FileKind.VIDEO) {
-                            // Expand to video with queue context
-                            val ids = playerUi.queue.items.map { it.file.stableId }
-                            navController.navigate("video/${Uri.encode(current.file.stableId)}?all=${Uri.encode(ids.joinToString(","))}")
-                        } else {
-                            navController.navigate("audio")
+            // Media routes (audio player, video, viewer, PDF) own the full window; showing the
+            // mini player on top of them duplicated transport controls and ate screen space.
+            if (!hideBottomBar) {
+                Column {
+                    MiniPlayer(
+                        onExpand = {
+                            val current = playerUi.queue.currentItem
+                            if (current != null && current.file.kind == com.teledrive.core.model.FileKind.VIDEO) {
+                                // Expand to video with queue context
+                                val ids = playerUi.queue.items.map { it.file.stableId }
+                                navController.navigate("video/${Uri.encode(current.file.stableId)}?all=${Uri.encode(ids.joinToString(","))}")
+                            } else {
+                                navController.navigate("audio")
+                            }
                         }
-                    }
-                )
-                if (!hideBottomBar) NavigationBar {
-                    destinations.forEach { destination ->
-                        NavigationBarItem(
-                            selected = currentRoute == destination.route,
-                            onClick = {
-                                navController.navigate(destination.route) {
-                                    popUpTo("home") { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(destination.icon, contentDescription = destination.label) },
-                            label = { Text(destination.label) },
-                        )
+                    )
+                    NavigationBar {
+                        destinations.forEach { destination ->
+                            NavigationBarItem(
+                                selected = currentRoute == destination.route,
+                                onClick = {
+                                    navController.navigate(destination.route) {
+                                        popUpTo("home") { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                icon = { Icon(destination.icon, contentDescription = destination.label) },
+                                label = { Text(destination.label) },
+                            )
+                        }
                     }
                 }
             }

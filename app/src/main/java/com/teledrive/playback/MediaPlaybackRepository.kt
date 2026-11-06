@@ -60,6 +60,7 @@ class MediaPlaybackRepository @Inject constructor(
             artist = metadata.artist,
             album = metadata.album,
             durationMs = metadata.durationMs,
+            genre = metadata.genre,
         )
     }
 
