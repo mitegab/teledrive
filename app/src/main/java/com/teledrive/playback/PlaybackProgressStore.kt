@@ -12,7 +12,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-private val Context.playbackPrefs by preferencesDataStore(name = "playback_progress")
+private val Context.playbackPrefs by preferencesDataStore(
+    name = "playback_progress",
+    // A truncated/corrupt preferences file must reset progress, not kill the process at the
+    // first read (CorruptionException escapes every caller and is fatal on Android).
+    corruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { androidx.datastore.preferences.core.emptyPreferences() },
+)
 
 @Singleton
 class PlaybackProgressStore @Inject constructor(

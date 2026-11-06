@@ -54,7 +54,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.teledrive.core.model.FileKind
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -79,7 +81,7 @@ fun ViewerScreen(stableId: String, imageIds: List<String> = emptyList(), onBack:
                 TextButton(onClick = viewModel::cancelDownload) { Text("Cancel") }
             }
             file == null -> ViewerFailure(state.error ?: "File unavailable", viewModel::openExternal, { exportPicker.launch("file") })
-            state.error != null -> ViewerFailure(state.error!!, viewModel::openExternal, { exportPicker.launch(file.originalFilename) })
+            state.error != null -> ViewerFailure(state.error ?: "File unavailable", viewModel::openExternal, { exportPicker.launch(file.originalFilename) })
             file.kind == FileKind.IMAGE -> HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth().weight(1f)) { page ->
                 val current = state.file
                 val path = current?.localPath
@@ -204,23 +206,37 @@ private fun ColumnScope.MediaViewer(path: String, video: Boolean, title: String,
     }
     SideEffect { val window = (context as? android.app.Activity)?.window; if (playing) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     var duration by remember(path) { mutableLongStateOf(0L) }
-    LaunchedEffect(player) { while (true) { position = player.currentPosition.coerceAtLeast(0); duration = player.duration.coerceAtLeast(0); delay(500) } }
+    // The player is released in onDispose while this loop may still be scheduled; reading a
+    // released player throws, and an exception in a composition coroutine kills the app.
+    LaunchedEffect(player) {
+        while (currentCoroutineContext().isActive) {
+            val snapshot = runCatching {
+                player.currentPosition.coerceAtLeast(0) to player.duration.coerceAtLeast(0)
+            }.getOrNull() ?: break
+            position = snapshot.first
+            duration = snapshot.second
+            delay(500)
+        }
+    }
+    fun safeSeek(target: Long) {
+        runCatching { player.seekTo(target.coerceAtLeast(0)) }
+    }
     if (video && failure == null) {
         val mediaPlayer = player
         AndroidView(factory = { viewContext -> PlayerView(viewContext).apply { this.player = mediaPlayer; useController = true } }, modifier = Modifier.fillMaxWidth().weight(1f))
     }
     else Column(Modifier.fillMaxWidth().weight(1f).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Text(title, color = Color.White, style = MaterialTheme.typography.titleLarge)
-        Slider(value = if (duration > 0) position.toFloat() / duration else 0f, onValueChange = { player.seekTo((it * duration).toLong()) })
+        Slider(value = if (duration > 0) position.toFloat() / duration else 0f, onValueChange = { fraction -> safeSeek((fraction * duration).toLong()) })
         Text("${timeLabel(position)} / ${timeLabel(duration)}", color = Color.White)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0)) }) { Icon(Icons.Rounded.Replay10, "Back 10 seconds", tint = Color.White) }
-            IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) { Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White) }
-            IconButton(onClick = { player.seekTo(player.currentPosition + 10_000) }) { Icon(Icons.Rounded.Forward10, "Forward 10 seconds", tint = Color.White) }
-            TextButton(onClick = { speed = if (speed >= 2f) 0.5f else speed + 0.5f; player.setPlaybackSpeed(speed) }) { Text("${speed}×", color = Color.White) }
+            IconButton(onClick = { safeSeek(runCatching { player.currentPosition }.getOrDefault(0L) - 10_000L) }) { Icon(Icons.Rounded.Replay10, "Back 10 seconds", tint = Color.White) }
+            IconButton(onClick = { runCatching { if (player.isPlaying) player.pause() else player.play() } }) { Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, if (playing) "Pause" else "Play", tint = Color.White) }
+            IconButton(onClick = { safeSeek(runCatching { player.currentPosition }.getOrDefault(0L) + 10_000L) }) { Icon(Icons.Rounded.Forward10, "Forward 10 seconds", tint = Color.White) }
+            TextButton(onClick = { speed = if (speed >= 2f) 0.5f else speed + 0.5f; runCatching { player.setPlaybackSpeed(speed) } }) { Text("${speed}×", color = Color.White) }
         }
     }
-    if (failure != null) ViewerFailure(failure!!, openExternal, export)
+    failure?.let { ViewerFailure(it, openExternal, export) }
 }
 
 private fun timeLabel(ms: Long): String = "%d:%02d".format(ms / 60_000, (ms / 1000) % 60)
