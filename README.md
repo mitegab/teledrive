@@ -13,6 +13,7 @@ TeleDrive is an Android file-manager experience backed by a user's Telegram Save
 - `core/telegram/` — TDLib JSON-Java gateway, authorization, Saved Messages mapping, and real transfer calls.
 - `docs/AUDIO_PLAYER.md` — the audio workspace UI/UX, mood/genre filters, timeline and its limits.
 - `docs/VIDEO_PLAYER.md` — the video workspace: transport, gestures, track/caption/audio sheets, playlists and the engine capability matrix.
+- `docs/CRASH_AUDIT.md` — process-level crash causes (playback wake lock, foreground service, DataStore corruption, shared caches, coroutine entry points) and the fixes.
 - `docs/IMPLEMENTATION_PLAN.md` — iterative delivery plan and validation gates.
 - `docs/TELEGRAM_INTEGRATION.md` — verified TDLib APIs, native build requirements, and integration limitations.
 - `PRIVACY.md` — data flows, local persistence, cache and deletion behavior.

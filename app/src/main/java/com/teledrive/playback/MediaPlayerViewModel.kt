@@ -18,6 +18,7 @@ import com.teledrive.playback.video.MediaTrackKind
 import com.teledrive.playback.video.MediaTrackSnapshot
 import com.teledrive.playback.video.VideoDecoderStats
 import com.teledrive.playback.video.VideoDimensions
+import com.teledrive.support.guarded
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Collections
 import javax.inject.Inject
@@ -61,7 +62,8 @@ class MediaPlayerViewModel @Inject constructor(
     val audioLibrary: StateFlow<List<StoredFile>> = repository.observeFiles(
         query = FileQuery(kinds = setOf(FileKind.AUDIO)),
         sort = FileSort(field = SortField.NAME, direction = SortDirection.ASCENDING),
-    ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        // A failing index query must empty the browser, not take the process down with it.
+    ).guarded("audio_library").stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val uiState: StateFlow<MediaPlayerUiState> = combine(
         controller.uiState,

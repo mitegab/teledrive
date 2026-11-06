@@ -16,7 +16,11 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.teleDriveDataStore by preferencesDataStore(name = "teledrive_preferences")
+private val Context.teleDriveDataStore by preferencesDataStore(
+    name = "teledrive_preferences",
+    // Falling back to defaults keeps the app usable when the file cannot be decoded.
+    corruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { androidx.datastore.preferences.core.emptyPreferences() },
+)
 
 @Singleton
 class PreferencesRepository @Inject constructor(

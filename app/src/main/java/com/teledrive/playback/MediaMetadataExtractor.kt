@@ -27,11 +27,21 @@ data class ExtractedMetadata(
 class MediaMetadataExtractor @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    private val cache = mutableMapOf<String, ExtractedMetadata>()
+    /**
+     * Bounded LRU cache. [extract] runs on Dispatchers.IO from several coroutines at once
+     * (player artwork, playlist rows, the video library), so an unsynchronised HashMap here
+     * loses entries and corrupts its buckets — surfacing as a ConcurrentModificationException
+     * or an infinite loop inside the map during eviction.
+     */
+    private val cacheLock = Any()
+    private val cache = object : LinkedHashMap<String, ExtractedMetadata>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ExtractedMetadata>?): Boolean =
+            size > MAX_CACHE_ENTRIES
+    }
 
     suspend fun extract(localPath: String?, fallbackTitle: String): ExtractedMetadata = withContext(Dispatchers.IO) {
         if (localPath == null) return@withContext ExtractedMetadata(fallbackTitle, null, null, null, null, null)
-        cache[localPath]?.let { return@withContext it }
+        synchronized(cacheLock) { cache[localPath] }?.let { return@withContext it }
         val retriever = MediaMetadataRetriever()
         val result = try {
             retriever.setDataSource(localPath)
@@ -72,14 +82,15 @@ class MediaMetadataExtractor @Inject constructor(
         } finally {
             runCatching { retriever.release() }
         }
-        cache[localPath] = result
-        // Bound cache size
-        if (cache.size > 80) {
-            val toRemove = cache.keys.take(20)
-            toRemove.forEach { cache.remove(it) }
-        }
+        synchronized(cacheLock) { cache[localPath] = result }
         result
     }
 
-    fun clearCache() { cache.clear() }
+    fun clearCache() {
+        synchronized(cacheLock) { cache.clear() }
+    }
+
+    private companion object {
+        const val MAX_CACHE_ENTRIES = 80
+    }
 }

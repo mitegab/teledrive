@@ -7,6 +7,7 @@ import com.teledrive.core.domain.TelegramStorageGateway
 import com.teledrive.core.domain.toAppError
 import com.teledrive.core.model.ErrorOperation
 import com.teledrive.core.model.StoredFile
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.FileOpenRouter
 import com.teledrive.files.toDownloadAppError
@@ -43,7 +44,12 @@ class ViewerViewModel @Inject constructor(
         if (_state.value.file?.stableId == stableId || _state.value.loading) return
         viewModelScope.launch {
             _state.value = ViewerState(loading = true)
-            val file = repository.observeFile(stableId).first()
+            val file = runCatching { repository.observeFile(stableId).first() }.getOrElse { error ->
+                // A failing index read must show the empty state, not crash the viewer.
+                TeleDriveLog.d("viewer.index_read_failed", "error" to error.message)
+                _state.value = ViewerState(error = error.toAppError(ErrorOperation.STORAGE).userMessage)
+                return@launch
+            }
             if (file == null) _state.value = ViewerState(error = "This file is no longer in the library.")
             else {
                 _state.value = ViewerState(file = file, loading = true)

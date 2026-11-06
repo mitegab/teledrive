@@ -18,7 +18,14 @@ class FileOpenRouter @Inject constructor(
     fun open(file: StoredFile, share: Boolean) {
         val path = file.localPath?.takeIf { localStorage.isAvailable(it, file.sizeBytes) }
             ?: throw IOException("The local cached file is no longer available")
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(path))
+        // A path outside the roots declared in res/xml/file_paths.xml (a stale row from an older
+        // build, for instance) makes getUriForFile throw IllegalArgumentException on the caller's
+        // thread; report it as an ordinary "cannot open" failure instead.
+        val uri = try {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(path))
+        } catch (error: IllegalArgumentException) {
+            throw IOException("This file cannot be shared from its current location. Export it instead.", error)
+        }
         val mimeType = resolveMimeType(file)
         if (!share && mimeType == null) {
             throw IOException("No app can open this file type. Export it to choose another location.")
@@ -26,7 +33,8 @@ class FileOpenRouter @Inject constructor(
         val intent = if (share) {
             ViewerIntents.share(uri, mimeType ?: "application/octet-stream", file.originalFilename)
         } else {
-            ViewerIntents.view(uri, mimeType!!, file.originalFilename)
+            // The null case is rejected above; keep the compiler-visible non-null value.
+            ViewerIntents.view(uri, mimeType ?: "application/octet-stream", file.originalFilename)
         }
         try {
             context.startActivity(

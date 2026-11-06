@@ -35,6 +35,7 @@ import com.teledrive.files.LocalFileStorage
 import com.teledrive.files.UiNotice
 import com.teledrive.files.toDownloadAppError
 import com.teledrive.preferences.PreferencesRepository
+import com.teledrive.support.guarded
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -148,7 +149,7 @@ class PdfReaderViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            downloads.statuses.collect { statuses ->
+            downloads.statuses.guarded("pdf_download_status").collect { statuses ->
                 _state.update { it.copy(download = statuses[stableId]) }
             }
         }
@@ -162,7 +163,12 @@ class PdfReaderViewModel @Inject constructor(
         loadJob = viewModelScope.launch {
             closeDocument()
             _state.value = PdfReaderUiState(stableId = stableId)
-            val stored = repository.observeFile(stableId).first()
+            val stored = runCatching { repository.observeFile(stableId).first() }.getOrElse { error ->
+                // A failing index read used to escape this coroutine and kill the process.
+                TeleDriveLog.d("pdf.index_read_failed", "error" to error.message)
+                fail(AppErrorMessages.forCategory(ErrorCategory.LOCAL_FILE_MISSING), canOpenExternal = false)
+                return@launch
+            }
             if (stored == null) {
                 fail(AppErrorMessages.forCategory(ErrorCategory.LOCAL_FILE_MISSING), canOpenExternal = false)
                 return@launch
@@ -189,12 +195,20 @@ class PdfReaderViewModel @Inject constructor(
                 fail(AppErrorMessages.forCategory(ErrorCategory.LOCAL_FILE_MISSING), canRetryDownload = true)
                 return@launch
             }
-            val probe = localStorage.probe(path, file.sizeBytes)
+            val probe = runCatching { localStorage.probe(path, file.sizeBytes) }.getOrElse { error ->
+                TeleDriveLog.d("pdf.probe_failed", "error" to error.message)
+                fail(AppErrorMessages.forCategory(ErrorCategory.LOCAL_FILE_MISSING), canRetryDownload = true)
+                return@launch
+            }
             if (!probe.exists || !probe.readable) {
                 fail(AppErrorMessages.forCategory(ErrorCategory.LOCAL_FILE_MISSING), canRetryDownload = true)
                 return@launch
             }
-            val header = localStorage.readHeader(path, PdfFileRules.headerBytesToRead())
+            val header = runCatching { localStorage.readHeader(path, PdfFileRules.headerBytesToRead()) }.getOrElse { error ->
+                TeleDriveLog.d("pdf.header_read_failed", "error" to error.message)
+                fail("This PDF could not be read from storage.", canRetryDownload = true)
+                return@launch
+            }
             when (PdfFileRules.preflight(probe.sizeBytes, header)) {
                 PdfPreflight.EMPTY -> {
                     fail("This PDF is empty (0 bytes).", canRetryDownload = true, canRemoveOfflineCopy = true)
