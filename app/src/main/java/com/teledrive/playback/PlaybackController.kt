@@ -5,15 +5,24 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.FileDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
+import com.teledrive.playback.video.MediaTrackKind
+import com.teledrive.playback.video.MediaTrackSnapshot
+import com.teledrive.playback.video.VideoDecoderStats
+import com.teledrive.playback.video.VideoDimensions
+import com.teledrive.playback.video.stepPosition
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
@@ -31,6 +40,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Singleton
 class PlaybackController @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -49,6 +59,21 @@ class PlaybackController @Inject constructor(
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     val queueState: StateFlow<PlaybackQueueState> = queue.state
+
+    private val _trackSnapshot = MutableStateFlow(MediaTrackSnapshot())
+
+    /** Audio/subtitle/video tracks and stream details of the current item, for the video workspace. */
+    val trackSnapshot: StateFlow<MediaTrackSnapshot> = _trackSnapshot.asStateFlow()
+
+    private val _audioSessionId = MutableStateFlow(0)
+
+    /** Audio session the equalizer/amplifier attach to; 0 until the first audio track is created. */
+    val audioSessionId: StateFlow<Int> = _audioSessionId.asStateFlow()
+
+    private val _videoSize = MutableStateFlow(VideoDimensions())
+
+    /** Decoded picture size of the current video, before any display rotation. */
+    val videoSize: StateFlow<VideoDimensions> = _videoSize.asStateFlow()
 
     init {
         // Restore the last chosen output volume before any track is prepared.
@@ -95,6 +120,31 @@ class PlaybackController @Inject constructor(
         override fun onPlaybackParametersChanged(params: androidx.media3.common.PlaybackParameters) {
             _uiState.update { it.copy(progress = it.progress.copy(speed = params.speed)) }
         }
+
+        override fun onTracksChanged(tracks: Tracks) {
+            refreshTracks(tracks)
+        }
+
+        override fun onTrackSelectionParametersChanged(parameters: TrackSelectionParameters) {
+            refreshTracks(player?.currentTracks)
+        }
+
+        override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+            _videoSize.value = VideoDimensions(videoSize.width, videoSize.height)
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            _audioSessionId.value = audioSessionId
+        }
+    }
+
+    private fun refreshTracks(tracks: Tracks?) {
+        val exo = player
+        _trackSnapshot.value = VideoTrackAdapter.snapshot(
+            tracks = tracks,
+            videoFormat = runCatching { exo?.videoFormat }.getOrNull(),
+            audioFormat = runCatching { exo?.audioFormat }.getOrNull(),
+        )
     }
 
     private fun ensurePlayer(): ExoPlayer {
@@ -115,12 +165,16 @@ class PlaybackController @Inject constructor(
             .build()
         newPlayer.addListener(playerListener)
         newPlayer.volume = _uiState.value.volume
+        // Video scrubbing and frame stepping need frame-accurate seeks, not keyframe snaps.
+        newPlayer.seekParameters = SeekParameters.EXACT
         newPlayer.repeatMode = when (queue.state.value.repeatMode) {
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
             RepeatMode.ALL -> Player.REPEAT_MODE_ALL
         }
         player = newPlayer
+        _videoSize.value = VideoDimensions()
+        refreshTracks(newPlayer.currentTracks)
         // Create media session for notifications and background controls
         if (mediaSession == null) {
             mediaSession = MediaSession.Builder(context, newPlayer).build()
@@ -336,6 +390,16 @@ class PlaybackController @Inject constructor(
         }
     }
 
+    /** Sets an explicit repeat mode (Off / One / All) instead of cycling. */
+    fun setRepeat(mode: RepeatMode) {
+        queue.setRepeatMode(mode)
+        player?.repeatMode = when (mode) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+        }
+    }
+
     fun setSpeed(speed: Float) {
         player?.setPlaybackSpeed(speed)
         _uiState.update { it.copy(progress = it.progress.copy(speed = speed)) }
@@ -481,6 +545,71 @@ class PlaybackController @Inject constructor(
         val pos = player?.currentPosition ?: _uiState.value.progress.positionMs
         val dur = player?.duration ?: _uiState.value.progress.durationMs
         controllerScope.launch { progressStore.setPosition(cur.file.stableId, pos, dur.takeIf { it > 0 }) }
+    }
+
+    // ---- video workspace ----------------------------------------------------------
+
+    /** Selects one specific audio/subtitle/video track. */
+    fun selectTrack(kind: MediaTrackKind, groupIndex: Int, trackIndex: Int) {
+        val exo = player ?: return
+        val parameters = VideoTrackAdapter.parametersForTrack(
+            base = exo.trackSelectionParameters,
+            tracks = exo.currentTracks,
+            kind = kind,
+            groupIndex = groupIndex,
+            trackIndex = trackIndex,
+        ) ?: return
+        exo.trackSelectionParameters = parameters
+        refreshTracks(exo.currentTracks)
+    }
+
+    /** Hands control of a track type back to DefaultTrackSelector. */
+    fun selectTrackAutomatic(kind: MediaTrackKind) {
+        val exo = player ?: return
+        val parameters = VideoTrackAdapter.parametersAutomatic(exo.trackSelectionParameters, kind) ?: return
+        exo.trackSelectionParameters = parameters
+        refreshTracks(exo.currentTracks)
+    }
+
+    /** Turns a track type on or off, e.g. subtitles with the caption toggle. */
+    fun setTrackTypeEnabled(kind: MediaTrackKind, enabled: Boolean) {
+        val exo = player ?: return
+        val parameters = VideoTrackAdapter.parametersWithTypeEnabled(exo.trackSelectionParameters, kind, enabled) ?: return
+        exo.trackSelectionParameters = parameters
+        refreshTracks(exo.currentTracks)
+    }
+
+    /**
+     * Steps a single frame. ExoPlayer has no frame-step API, so this pauses, then seeks by one
+     * frame duration with exact seek parameters — the standard way to reach the adjacent frame.
+     */
+    fun frameStep(forward: Boolean) {
+        val exo = player ?: return
+        exo.pause()
+        val frameRate = runCatching { exo.videoFormat?.frameRate }.getOrNull()
+        val duration = exo.duration.takeIf { it > 0L } ?: 0L
+        val target = stepPosition(exo.currentPosition, duration, frameRate, frames = 1, forward = forward)
+        seekTo(target)
+    }
+
+    /** Tightens seeks to the exact frame while a video surface is on screen. */
+    fun setPreciseSeeking(enabled: Boolean) {
+        player?.seekParameters = if (enabled) SeekParameters.EXACT else SeekParameters.DEFAULT
+    }
+
+    /** Last stored position for the resume prompt; never throws. */
+    suspend fun savedPositionMs(stableId: String): Long =
+        runCatching { progressStore.getPosition(stableId) }.getOrDefault(0L)
+
+    /** Reads ExoPlayer's video decoder counters (rendered/dropped frames). */
+    fun decoderStats(): VideoDecoderStats {
+        val exo = player ?: return VideoDecoderStats()
+        val counters = runCatching { exo.videoDecoderCounters }.getOrNull()
+        return VideoDecoderStats(
+            renderedFrames = counters?.renderedOutputBufferCount?.toLong() ?: 0L,
+            droppedFrames = counters?.droppedBufferCount?.toLong() ?: 0L,
+            activeCodecs = runCatching { exo.videoFormat?.codecs }.getOrNull(),
+        )
     }
 
     fun isActivePlayback(): Boolean = _uiState.value.status in setOf(PlaybackStatus.PLAYING, PlaybackStatus.PAUSED, PlaybackStatus.BUFFERING, PlaybackStatus.PREPARING) && queue.current() != null

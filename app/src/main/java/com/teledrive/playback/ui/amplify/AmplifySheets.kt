@@ -37,7 +37,7 @@ import com.teledrive.playback.PlaybackQueueState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AmplifySheet(
+internal fun AmplifySheet(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit,
 ) {
