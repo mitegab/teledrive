@@ -41,6 +41,7 @@ class PlaybackController @Inject constructor(
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
     private var progressJob: Job? = null
+    private var volumeJob: Job? = null
     private var pendingSeek: Long? = null
     private val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -48,6 +49,15 @@ class PlaybackController @Inject constructor(
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     val queueState: StateFlow<PlaybackQueueState> = queue.state
+
+    init {
+        // Restore the last chosen output volume before any track is prepared.
+        controllerScope.launch {
+            val saved = runCatching { progressStore.getVolume() }.getOrDefault(1f)
+            _uiState.update { it.copy(volume = saved) }
+            player?.volume = saved
+        }
+    }
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
@@ -104,6 +114,7 @@ class PlaybackController @Inject constructor(
             .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
         newPlayer.addListener(playerListener)
+        newPlayer.volume = _uiState.value.volume
         newPlayer.repeatMode = when (queue.state.value.repeatMode) {
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
@@ -151,8 +162,10 @@ class PlaybackController @Inject constructor(
 
     suspend fun playSingle(stableId: String, allIds: List<String> = emptyList()) {
         _uiState.update { it.copy(status = PlaybackStatus.RESOLVING, availability = MediaAvailability.REMOTE_ONLY, error = null, downloadProgress = null) }
-        // Build queue if needed
-        if (allIds.isNotEmpty() && queue.state.value.items.isEmpty()) {
+        // Build the queue from the caller's id list when it is empty, or when the requested
+        // track is not part of the current queue (e.g. "play this file" from another section).
+        val queuedIds = queue.state.value.items.map { it.file.stableId }
+        if (allIds.isNotEmpty() && (queuedIds.isEmpty() || stableId !in queuedIds)) {
             val (items, startIdx) = playbackRepo.buildQueueFromIds(allIds, stableId)
             if (items.isNotEmpty()) queue.setQueue(items, startIdx)
         }
@@ -328,6 +341,39 @@ class PlaybackController @Inject constructor(
         _uiState.update { it.copy(progress = it.progress.copy(speed = speed)) }
     }
 
+    /** Applies output volume immediately and persists it shortly after the user stops dragging. */
+    fun setVolume(volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        player?.volume = clamped
+        _uiState.update { it.copy(volume = clamped) }
+        volumeJob?.cancel()
+        volumeJob = controllerScope.launch {
+            delay(500)
+            runCatching { progressStore.setVolume(clamped) }
+        }
+    }
+
+    /** Timeline skip buttons: ±10 seconds without touching the queue order. */
+    fun seekRelative(deltaMs: Long) {
+        val current = _uiState.value.progress.positionMs.takeIf { it > 0L } ?: player?.currentPosition ?: 0L
+        seekTo(current + deltaMs)
+    }
+
+    /**
+     * Transport "previous" that always moves in the queue. The mini-player keeps the
+     * platform convention of restarting the current track after a few seconds.
+     */
+    fun previousTrack() {
+        controllerScope.launch {
+            val prev = queue.previous()
+            if (prev == null) {
+                seekTo(0L)
+            } else {
+                resolveAndPlay(prev)
+            }
+        }
+    }
+
     fun next() {
         controllerScope.launch {
             val next = queue.next() ?: run {
@@ -447,7 +493,7 @@ class PlaybackController @Inject constructor(
         player = null
         mediaSession?.release()
         mediaSession = null
-        _uiState.update { PlayerUiState() }
+        _uiState.update { PlayerUiState(volume = it.volume) }
     }
 
     // Called when app backgrounded; keep service alive if playing

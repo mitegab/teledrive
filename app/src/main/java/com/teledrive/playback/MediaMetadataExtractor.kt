@@ -20,6 +20,7 @@ data class ExtractedMetadata(
     val durationMs: Long?,
     val artworkBytes: ByteArray?,
     val trackNumber: String?,
+    val genre: String? = null,
 )
 
 @Singleton
@@ -40,6 +41,10 @@ class MediaMetadataExtractor @Inject constructor(
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
             val track = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_NUM_TRACKS)
+            // Genre tags drive the playlist mood/genre filters; absence is fine.
+            val genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
             // Do not keep huge artwork in memory permanently; cap at 2MB
             val rawArt = runCatching { retriever.embeddedPicture }
                 .onFailure { error -> TeleDriveLog.d("media.artwork_missing", "error" to error.message) }
@@ -59,7 +64,7 @@ class MediaMetadataExtractor @Inject constructor(
                     }.getOrDefault(bytes)
                 } else bytes
             }
-            ExtractedMetadata(title, artist, album, duration, art, track?.takeIf { it.isNotBlank() })
+            ExtractedMetadata(title, artist, album, duration, art, track?.takeIf { it.isNotBlank() }, genre)
         } catch (error: Exception) {
             // Metadata is optional; the file name remains a usable title.
             TeleDriveLog.d("media.metadata_failed", "error" to error.message)
