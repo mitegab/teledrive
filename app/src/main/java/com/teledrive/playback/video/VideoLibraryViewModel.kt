@@ -9,10 +9,13 @@ import com.teledrive.core.model.FileSort
 import com.teledrive.core.model.SortDirection
 import com.teledrive.core.model.SortField
 import com.teledrive.core.model.StoredFile
+import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.playback.PlaybackController
 import com.teledrive.playback.PlaybackProgressStore
+import com.teledrive.support.guarded
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,7 +52,7 @@ class VideoLibraryViewModel @Inject constructor(
     private val files: StateFlow<List<StoredFile>> = repository.observeFiles(
         query = FileQuery(kinds = setOf(FileKind.VIDEO)),
         sort = FileSort(field = SortField.DATE, direction = SortDirection.DESCENDING),
-    ).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    ).guarded("video_library").stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val entries: StateFlow<List<VideoLibraryEntry>> =
         combine(files, positions, durations) { fileList, pos, dur ->
@@ -69,10 +72,10 @@ class VideoLibraryViewModel @Inject constructor(
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    private val playlistState = playlistStore.playlists.stateIn(
+    private val playlistState = playlistStore.playlists.guarded("video_playlists").stateIn(
         viewModelScope, SharingStarted.Eagerly, emptyList(),
     )
-    private val recentIds = playlistStore.recents.stateIn(
+    private val recentIds = playlistStore.recents.guarded("video_recents").stateIn(
         viewModelScope, SharingStarted.Eagerly, emptyList(),
     )
 
@@ -129,7 +132,10 @@ class VideoLibraryViewModel @Inject constructor(
 
     /** Re-reads saved positions; call when the workspace becomes visible again. */
     fun refresh() {
-        viewModelScope.launch { refreshPositions(files.value.map { it.stableId }) }
+        viewModelScope.launch {
+            runCatching { refreshPositions(files.value.map { it.stableId }) }
+                .onFailure { error -> TeleDriveLog.d("video.positions_failed", "error" to error.message) }
+        }
     }
 
     fun setQuery(value: String) = filters.update { it.copy(query = value) }
@@ -159,12 +165,30 @@ class VideoLibraryViewModel @Inject constructor(
     }
 
     fun play(entry: VideoLibraryEntry, allIds: List<String> = emptyList()) {
-        viewModelScope.launch { controller.playSingle(entry.stableId, allIds) }
+        startPlayback("video_play") { controller.playSingle(entry.stableId, allIds) }
     }
 
     fun playPlaylist(playlist: VideoPlaylist) {
         val first = playlist.stableIds.firstOrNull() ?: return
-        viewModelScope.launch { controller.playSingle(first, playlist.stableIds) }
+        startPlayback("video_play_playlist") { controller.playSingle(first, playlist.stableIds) }
+    }
+
+    /**
+     * `playSingle` resolves the file, may download it, and writes progress — all of which can
+     * throw. Without this guard the exception escapes `viewModelScope` and kills the process,
+     * which is what happened when a video could not be played.
+     */
+    private fun startPlayback(tag: String, block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                TeleDriveLog.d("playback.$tag.failed", "error" to error.message)
+                controller.reportFailure(error)
+            }
+        }
     }
 
     fun addToQueue(stableId: String, playNext: Boolean = false) = controller.addToQueue(stableId, playNext)

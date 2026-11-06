@@ -23,6 +23,7 @@ import com.teledrive.core.model.TeleDriveLog
 import com.teledrive.core.model.TransferState
 import com.teledrive.metadata.MetadataSyncWriter
 import com.teledrive.preferences.PreferencesRepository
+import com.teledrive.support.guarded
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
 import javax.inject.Inject
@@ -92,9 +93,9 @@ class FileLibraryViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(query, sort, preferences.gridView) { q, s, grid -> Triple(q, s, grid) }
+            combine(query, sort, preferences.gridView.guarded("grid_preference")) { q, s, grid -> Triple(q, s, grid) }
                 .collectLatest { (q, s, grid) ->
-                    observeFiles(q, s).collect { files ->
+                    observeFiles(q, s).guarded("library_files").collect { files ->
                         _state.update { current ->
                             current.copy(
                                 files = files,
@@ -108,16 +109,20 @@ class FileLibraryViewModel @Inject constructor(
                 }
         }
         viewModelScope.launch {
-            repository.observeFolders().collect { folders -> _state.update { it.copy(folders = folders) } }
+            repository.observeFolders().guarded("library_folders").collect { folders -> _state.update { it.copy(folders = folders) } }
         }
         viewModelScope.launch {
             downloadCoordinator.statuses.collect { downloads -> _state.update { it.copy(downloads = downloads) } }
         }
         viewModelScope.launch {
-            gateway.remoteMessageDeletions.collect { remote -> repository.markRemoteDeleted(remote) }
+            gateway.remoteMessageDeletions.collect { remote ->
+                // One unusable remote id must not abort the deletion stream.
+                runCatching { repository.markRemoteDeleted(remote) }
+                    .onFailure { error -> TeleDriveLog.d("library.remote_delete_failed", "error" to error.message) }
+            }
         }
         viewModelScope.launch {
-            repository.observeFiles().collect { files ->
+            repository.observeFiles().guarded("library_usage").collect { files ->
                 val usage = files.filter { it.localAvailability == LocalAvailability.AVAILABLE }
                     .sumOf { it.sizeBytes ?: 0L }
                 _state.update { it.copy(offlineUsageBytes = usage) }

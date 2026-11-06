@@ -67,7 +67,9 @@ class MediaPlaybackRepository @Inject constructor(
     suspend fun buildQueueFromIds(stableIds: List<String>, startId: String? = null): Pair<List<PlaybackItem>, Int> {
         val items = mutableListOf<PlaybackItem>()
         var startIndex = 0
-        for (id in stableIds) {
+        // Callers pass library id lists that may repeat an id; a repeated entry would produce
+        // duplicate rows (and duplicate LazyColumn keys) in the queue.
+        for (id in stableIds.distinct()) {
             val res = resolveForPlayback(id)
             // Include remote-only items; they will trigger download on selection
             val file = when (res) {

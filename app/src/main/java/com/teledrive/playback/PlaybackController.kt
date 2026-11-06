@@ -77,12 +77,35 @@ class PlaybackController @Inject constructor(
 
     init {
         // Restore the last chosen output volume before any track is prepared.
-        controllerScope.launch {
+        safeLaunch("volume_restore") {
             val saved = runCatching { progressStore.getVolume() }.getOrDefault(1f)
             _uiState.update { it.copy(volume = saved) }
             player?.volume = saved
         }
     }
+
+    /**
+     * Every fire-and-forget task started from this controller goes through here.
+     *
+     * These coroutines run on the main dispatcher with nobody to join them, so an
+     * escaping exception (Room, DataStore, the file system, a decoder init) reaches the
+     * thread's default handler and kills the process. Failures are logged and surfaced
+     * through [reportFailure] instead, which is what the player UI renders.
+     */
+    private fun safeLaunch(tag: String, block: suspend () -> Unit): Job =
+        controllerScope.launch {
+            try {
+                block()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                com.teledrive.core.model.TeleDriveLog.d(
+                    "playback.$tag",
+                    "error" to error.message,
+                )
+                reportFailure(error)
+            }
+        }
 
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
@@ -148,7 +171,7 @@ class PlaybackController @Inject constructor(
     }
 
     private fun ensurePlayer(): ExoPlayer {
-        if (player != null) return player!!
+        player?.let { return it }
         val dataSourceFactory = DefaultDataSource.Factory(context, FileDataSource.Factory())
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
         val newPlayer = ExoPlayer.Builder(context)
@@ -175,12 +198,27 @@ class PlaybackController @Inject constructor(
         player = newPlayer
         _videoSize.value = VideoDimensions()
         refreshTracks(newPlayer.currentTracks)
-        // Create media session for notifications and background controls
-        if (mediaSession == null) {
-            mediaSession = MediaSession.Builder(context, newPlayer).build()
-        }
+        ensureSession(newPlayer)
         return newPlayer
     }
+
+    /**
+     * The controller is the single owner of the [MediaSession]. Creating a second session for
+     * the same player (the service used to build a fallback one) produces two notification
+     * providers and duplicate controller registrations, which Media3 rejects at runtime.
+     */
+    private fun ensureSession(exo: ExoPlayer): MediaSession {
+        mediaSession?.let { return it }
+        val session = MediaSession.Builder(context, exo).build()
+        mediaSession = session
+        return session
+    }
+
+    /**
+     * Session for [MediaPlaybackService.onGetSession]; builds the player lazily so the
+     * service never constructs a player (and therefore a competing session) on its own.
+     */
+    fun getOrCreateSession(): MediaSession = ensureSession(ensurePlayer())
 
     fun getPlayer(): ExoPlayer = ensurePlayer()
     fun getSession(): MediaSession? = mediaSession
@@ -191,27 +229,39 @@ class PlaybackController @Inject constructor(
      * crashing the UI coroutine.
      */
     fun reportFailure(error: Throwable) {
-        val mapped = if (error is PlaybackException) {
-            MediaErrorMapper.fromPlaybackException(error)
-        } else {
-            MediaErrorMapper.fromDownloadError(error.message)
+        runCatching {
+            val mapped = if (error is PlaybackException) {
+                MediaErrorMapper.fromPlaybackException(error)
+            } else {
+                MediaErrorMapper.fromDownloadError(error.message)
+            }
+            com.teledrive.core.model.TeleDriveLog.d("playback.failed", "error" to error.message)
+            _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = mapped) }
         }
-        com.teledrive.core.model.TeleDriveLog.d("playback.failed", "error" to error.message)
-        _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = mapped) }
     }
 
     private fun ensureService() {
         try {
             val intent = android.content.Intent(context, MediaPlaybackService::class.java)
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
-            }
+            // startService rather than startForegroundService: the platform kills the process
+            // when a service started with startForegroundService has not posted a foreground
+            // notification within ~5s, which happens whenever playback never actually starts
+            // (missing local file, unsupported codec, instant error). Media3 promotes the
+            // running service to foreground itself as soon as a session is playing.
+            context.startService(intent)
         } catch (error: Exception) {
-            // The service is optional for in-process playback, but the failure is worth a log.
+            // The service is optional for in-process playback; backgrounded starts are
+            // rejected by the platform on API 26+ and only cost the notification.
             com.teledrive.core.model.TeleDriveLog.d("playback.service_start_failed", "error" to error.message)
         }
+    }
+
+    /** Releases the notification/foreground state once nothing is playing. */
+    private fun stopService() {
+        runCatching { context.stopService(android.content.Intent(context, MediaPlaybackService::class.java)) }
+            .onFailure { error ->
+                com.teledrive.core.model.TeleDriveLog.d("playback.service_stop_failed", "error" to error.message)
+            }
     }
 
     suspend fun playSingle(stableId: String, allIds: List<String> = emptyList()) {
@@ -306,15 +356,16 @@ class PlaybackController @Inject constructor(
     private suspend fun prepareAndPlay(item: PlaybackItem) {
         withContext(Dispatchers.Main) {
             val exo = ensurePlayer()
-            ensureService()
             _uiState.update { it.copy(status = PlaybackStatus.PREPARING, error = null) }
             if (item.localPath.isBlank()) {
                 _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = MediaErrorMapper.missingFile("The file has not been downloaded yet.")) }
+                stopProgressPolling()
                 return@withContext
             }
             val file = File(item.localPath)
             if (!file.exists()) {
                 _uiState.update { it.copy(status = PlaybackStatus.ERROR, error = MediaErrorMapper.missingFile("Local file not found: ${item.file.originalFilename}")) }
+                stopProgressPolling()
                 return@withContext
             }
             val mediaMetadata = MediaMetadata.Builder()
@@ -327,12 +378,19 @@ class PlaybackController @Inject constructor(
                 .setMediaMetadata(mediaMetadata)
                 .setMediaId(item.file.stableId)
                 .build()
-            exo.setMediaItem(mediaItem)
-            exo.prepare()
-            // restore position if we have saved progress
-            pendingSeek = progressStore.getPosition(item.file.stableId)
-            if (pendingSeek == 0L) pendingSeek = null
-            exo.playWhenReady = true
+            try {
+                exo.setMediaItem(mediaItem)
+                exo.prepare()
+                // restore position if we have saved progress
+                pendingSeek = runCatching { progressStore.getPosition(item.file.stableId) }.getOrDefault(0L)
+                if (pendingSeek == 0L) pendingSeek = null
+                // Only now is there something the foreground service can advertise.
+                ensureService()
+                exo.playWhenReady = true
+            } catch (error: Exception) {
+                com.teledrive.core.model.TeleDriveLog.d("playback.prepare_failed", "error" to error.message)
+                reportFailure(error)
+            }
         }
     }
 
@@ -428,7 +486,7 @@ class PlaybackController @Inject constructor(
      * platform convention of restarting the current track after a few seconds.
      */
     fun previousTrack() {
-        controllerScope.launch {
+        safeLaunch("previous_track") {
             val prev = queue.previous()
             if (prev == null) {
                 seekTo(0L)
@@ -439,31 +497,31 @@ class PlaybackController @Inject constructor(
     }
 
     fun next() {
-        controllerScope.launch {
+        safeLaunch("next") {
             val next = queue.next() ?: run {
                 // if no next but repeat ALL, queue handling already done
-                return@launch
+                return@safeLaunch
             }
             resolveAndPlay(next)
         }
     }
 
     fun previous() {
-        controllerScope.launch {
+        safeLaunch("previous") {
             // If position > 3 sec, seek to start instead of previous track (platform convention)
             val pos = player?.currentPosition ?: 0L
             if (pos > 3000L) {
                 seekTo(0L)
-                return@launch
+                return@safeLaunch
             }
-            val prev = queue.previous() ?: return@launch
+            val prev = queue.previous() ?: return@safeLaunch
             resolveAndPlay(prev)
         }
     }
 
     fun addToQueue(stableId: String, playNext: Boolean = false) {
-        controllerScope.launch {
-            val file = playbackRepo.getFile(stableId) ?: return@launch
+        safeLaunch("add_to_queue") {
+            val file = playbackRepo.getFile(stableId) ?: return@safeLaunch
             val res = playbackRepo.resolveForPlayback(stableId)
             val path = when (res) {
                 is MediaResolution.Available -> res.localPath
@@ -475,7 +533,7 @@ class PlaybackController @Inject constructor(
     }
 
     fun addAllToQueue(stableIds: List<String>) {
-        controllerScope.launch {
+        safeLaunch("add_all_to_queue") {
             val items = mutableListOf<PlaybackItem>()
             for (id in stableIds) {
                 val f = playbackRepo.getFile(id) ?: continue
@@ -499,12 +557,12 @@ class PlaybackController @Inject constructor(
     }
 
     private fun handleTrackEnded() {
-        controllerScope.launch {
+        safeLaunch("track_ended") {
             val repeat = queue.state.value.repeatMode
             if (repeat == RepeatMode.ONE) {
                 player?.seekTo(0L)
                 player?.play()
-                return@launch
+                return@safeLaunch
             }
             val next = queue.next()
             if (next != null) {
@@ -521,13 +579,26 @@ class PlaybackController @Inject constructor(
             while (isActive) {
                 val p = player
                 if (p != null) {
-                    val pos = p.currentPosition.coerceAtLeast(0L)
-                    val dur = p.duration.takeIf { it > 0 } ?: queue.current()?.durationMs ?: _uiState.value.progress.durationMs
-                    val buf = p.bufferedPosition.coerceAtLeast(0L)
-                    _uiState.update { it.copy(progress = PlaybackProgress(positionMs = pos, durationMs = dur.coerceAtLeast(0L), bufferedMs = buf, speed = p.playbackParameters.speed)) }
-                    // Throttle persistence: every 5s
+                    // Reading a released/stale player must end the polling loop, not the app.
+                    val snapshot = runCatching {
+                        Triple(p.currentPosition.coerceAtLeast(0L), p.duration, p.bufferedPosition.coerceAtLeast(0L))
+                    }.getOrElse { error ->
+                        com.teledrive.core.model.TeleDriveLog.d("playback.progress_poll_failed", "error" to error.message)
+                        stopProgressPolling()
+                        return@launch
+                    }
+                    val (pos, rawDuration, buf) = snapshot
+                    val dur = rawDuration.takeIf { it > 0 } ?: queue.current()?.durationMs ?: _uiState.value.progress.durationMs
+                    _uiState.update { it.copy(progress = PlaybackProgress(positionMs = pos, durationMs = dur.coerceAtLeast(0L), bufferedMs = buf, speed = runCatching { p.playbackParameters.speed }.getOrDefault(it.progress.speed))) }
+                    // Throttle persistence: every 5s. A DataStore write failure (full disk,
+                    // revoked storage) must only cost the resume position, never the process.
                     if (pos % 5000L < 550L) {
-                        queue.current()?.let { cur -> progressStore.setPosition(cur.file.stableId, pos, dur) }
+                        queue.current()?.let { cur ->
+                            runCatching { progressStore.setPosition(cur.file.stableId, pos, dur) }
+                                .onFailure { error ->
+                                    com.teledrive.core.model.TeleDriveLog.d("playback.progress_save_failed", "error" to error.message)
+                                }
+                        }
                     }
                 }
                 delay(500L)
@@ -544,7 +615,12 @@ class PlaybackController @Inject constructor(
         val cur = queue.current() ?: return
         val pos = player?.currentPosition ?: _uiState.value.progress.positionMs
         val dur = player?.duration ?: _uiState.value.progress.durationMs
-        controllerScope.launch { progressStore.setPosition(cur.file.stableId, pos, dur.takeIf { it > 0 }) }
+        safeLaunch("progress_persist") {
+            runCatching { progressStore.setPosition(cur.file.stableId, pos, dur.takeIf { it > 0 }) }
+                .onFailure { error ->
+                    com.teledrive.core.model.TeleDriveLog.d("playback.progress_save_failed", "error" to error.message)
+                }
+        }
     }
 
     // ---- video workspace ----------------------------------------------------------
@@ -616,12 +692,17 @@ class PlaybackController @Inject constructor(
 
     fun release() {
         persistProgress()
-        progressJob?.cancel()
-        player?.removeListener(playerListener)
-        player?.release()
-        player = null
-        mediaSession?.release()
+        stopProgressPolling()
+        // The session references the player, so it must be released first; releasing the
+        // player underneath a live session throws inside Media3's internal callbacks.
+        runCatching { mediaSession?.release() }
+            .onFailure { error -> com.teledrive.core.model.TeleDriveLog.d("playback.session_release_failed", "error" to error.message) }
         mediaSession = null
+        runCatching { player?.removeListener(playerListener) }
+        runCatching { player?.release() }
+            .onFailure { error -> com.teledrive.core.model.TeleDriveLog.d("playback.player_release_failed", "error" to error.message) }
+        player = null
+        stopService()
         _uiState.update { PlayerUiState(volume = it.volume) }
     }
 

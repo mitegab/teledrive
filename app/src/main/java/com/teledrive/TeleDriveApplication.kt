@@ -30,7 +30,10 @@ class TeleDriveApplication : Application() {
             runCatching { startupReconciler.reconcile() }
                 .onFailure { error -> TeleDriveLog.d("startup.reconcile_failed", "error" to error.message) }
             // Room transfer rows survive process death; recheck them once per app start.
-            transferWorkScheduler.enqueue()
+            // WorkManager throws when initialization failed (direct boot, disabled component),
+            // which must not take down a process that is already showing the library.
+            runCatching { transferWorkScheduler.enqueue() }
+                .onFailure { error -> TeleDriveLog.d("startup.work_enqueue_failed", "error" to error.message) }
         }
     }
 }

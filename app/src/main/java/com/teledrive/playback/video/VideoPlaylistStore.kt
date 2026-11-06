@@ -11,7 +11,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-private val Context.videoPlaylistPrefs by preferencesDataStore(name = "video_playlists")
+private val Context.videoPlaylistPrefs by preferencesDataStore(
+    name = "video_playlists",
+    // Playlists are rebuilt from the index; recovering is always better than crashing.
+    corruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { androidx.datastore.preferences.core.emptyPreferences() },
+)
 
 /**
  * Persists named video playlists and the "recently played" order. Layout is a single encoded

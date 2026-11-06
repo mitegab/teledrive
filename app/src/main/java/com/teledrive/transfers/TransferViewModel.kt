@@ -14,6 +14,7 @@ import com.teledrive.core.model.TransferState
 import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.UploadCoordinator
 import com.teledrive.files.toDownloadAppError
+import com.teledrive.support.guarded
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -45,16 +46,17 @@ class TransferViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            repository.observeTransfers().collect { transfers -> _state.update { it.copy(transfers = transfers) } }
+            repository.observeTransfers().guarded("transfers").collect { transfers -> _state.update { it.copy(transfers = transfers) } }
         }
         viewModelScope.launch {
-            gateway.transferUpdates.collect { progress -> applyProgress(progress) }
+            gateway.transferUpdates.guarded("transfer_updates").collect { progress -> applyProgress(progress) }
         }
     }
 
     fun cancel(transfer: Transfer) {
         viewModelScope.launch {
-            val current = repository.getTransfer(transfer.id.value) ?: transfer
+            // The lookup itself touches Room; a failure here must not escape the coroutine.
+            val current = runCatching { repository.getTransfer(transfer.id.value) }.getOrNull() ?: transfer
             if (current.state.isTerminal) return@launch
             try {
                 if (current.direction == TransferDirection.DOWNLOAD) {

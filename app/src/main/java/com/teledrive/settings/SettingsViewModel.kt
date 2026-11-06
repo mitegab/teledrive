@@ -9,6 +9,7 @@ import com.teledrive.files.DownloadCoordinator
 import com.teledrive.files.LocalFileStorage
 import com.teledrive.preferences.AppTheme
 import com.teledrive.preferences.PreferencesRepository
+import com.teledrive.support.guarded
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,11 +41,11 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            combine(preferences.theme, preferences.syncMetadataEnabled) { theme, syncMetadata -> theme to syncMetadata }
+            combine(preferences.theme.guarded("theme"), preferences.syncMetadataEnabled.guarded("sync_metadata")) { theme, syncMetadata -> theme to syncMetadata }
                 .collect { (theme, syncMetadata) -> _state.update { it.copy(theme = theme, syncMetadata = syncMetadata) } }
         }
         viewModelScope.launch {
-            repository.observeFiles().collect { files ->
+            repository.observeFiles().guarded("settings_files").collect { files ->
                 _state.update { it.copy(cacheUsageBytes = files.sumOf { file -> file.sizeBytes?.takeIf { file.localPath != null } ?: 0L }) }
             }
         }

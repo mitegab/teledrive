@@ -14,12 +14,21 @@ class PlaybackQueue @Inject constructor() {
     val state: StateFlow<PlaybackQueueState> = _state.asStateFlow()
 
     fun setQueue(items: List<PlaybackItem>, startIndex: Int = 0) {
+        // A queue with two entries for the same file breaks every LazyColumn that keys rows by
+        // stableId (duplicate keys throw) and makes the cursor ambiguous, so the queue is
+        // deduplicated here — the one place a whole list is installed at once.
+        val startId = items.getOrNull(startIndex)?.file?.stableId
+        val unique = items.distinctBy { it.file.stableId }
+        val resolvedStart = startId
+            ?.let { id -> unique.indexOfFirst { it.file.stableId == id } }
+            ?.takeIf { it >= 0 }
+            ?: 0
         _state.value = PlaybackQueueState(
-            items = items,
-            currentIndex = if (items.isEmpty()) -1 else startIndex.coerceIn(0, items.size - 1),
+            items = unique,
+            currentIndex = if (unique.isEmpty()) -1 else resolvedStart.coerceIn(0, unique.size - 1),
             repeatMode = _state.value.repeatMode,
             shuffleMode = _state.value.shuffleMode,
-            shuffledOrder = if (_state.value.shuffleMode == ShuffleMode.ON) buildShuffled(items.size, startIndex) else emptyList()
+            shuffledOrder = if (_state.value.shuffleMode == ShuffleMode.ON) buildShuffled(unique.size, resolvedStart) else emptyList()
         )
     }
 
