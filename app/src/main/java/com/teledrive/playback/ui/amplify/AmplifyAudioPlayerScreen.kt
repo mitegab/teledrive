@@ -242,7 +242,7 @@ fun AmplifyAudioPlayerScreen(
                                 onOpenQueue = { showQueueSheet = true },
                             )
                         }
-                        Box(Modifier.width(1.dp).fillMaxHeight().background(AmplifyColors.Hairline))
+                        Spacer(Modifier.width(1.dp).fillMaxHeight().background(AmplifyColors.Hairline))
                     }
 
                     Column(Modifier.weight(1f).fillMaxHeight()) {
