@@ -55,16 +55,26 @@ view model uses, and the on-disk state the whole app reads at startup.
 - `files/FileOpenRouter.kt` — provider `IllegalArgumentException` reported as an ordinary
   "cannot open" failure; `mimeType!!` removed.
 - `TeleDriveApplication.kt` — WorkManager enqueue cannot abort startup.
+- `app/src/test/java/com/teledrive/playback/PlaybackQueueTest.kt` — corrected the
+  `move(0, 2)` expectation (see the verification table) and added one-step move coverage.
 
 ## 3. Verification
 
 | Check | Result |
 | --- | --- |
-| Kotlin parse of every changed file (`kotlinc`, JDK 25) | clean |
-| `PlaybackQueue` behaviour tests (dedupe, start-index remap, empty queue, out-of-range start, `next`/`previous`, repeat-ALL wrap, `addToQueue` dedupe) | 16/16 passed |
-| Bounded LRU cache under 8 concurrent writers | bounded at 5 entries, no corruption |
+| Kotlin parse of every changed file (`kotlinc` 2.4.21, JDK 25) | clean |
+| Repository tests `PlaybackQueueTest` + `PlaybackProgressTest` (run against the changed queue) | 10/10 passed |
+| Repository video suite `VideoPlaybackOptionsTest`, `VideoMediaStateTest`, `VideoPlaylistTest` | 34/34 passed |
+| Extra `PlaybackQueue` behaviour checks (dedupe, start-index remap, empty queue, out-of-range start, `next`/`previous`, repeat-ALL wrap, `addToQueue` dedupe) | 16/16 passed |
+| Bounded LRU cache under 8 concurrent writers | bounded, no corruption |
 | `safeLaunch` label/`return@` pattern (compile replica of the controller code) | compiles |
 | `Flow<T>.guarded` signature against a `catch { }` with the real `FlowCollector` receiver | compiles |
+
+`PlaybackQueueTest.removeAndReorder` asserted `items[0] == 3` after `move(0, 2)`, which never held:
+`move()` removes the row and then inserts it at the destination index, so the result is
+`[2, 3, 1]`. The assertion now states the real result and pins the one-step moves the queue
+sheet performs. The test failed identically before this branch, so it is a test fix, not a
+behaviour change.
 
 Not verifiable in this environment: no Android SDK, Media3, Room, Hilt or Compose artifacts are
 available, so the app itself cannot be assembled here; the checks above are the compile-level

@@ -75,8 +75,17 @@ class PlaybackQueueTest {
 
         q.setQueue(listOf(item(1), item(2), item(3)), 0)
         q.move(0, 2)
-        assertEquals(3L, q.state.value.items[0].file.remote.messageId)
+        // move() removes the row first and then inserts it at the destination index, so a
+        // multi-step move lands the row at the end instead of the middle. The queue sheet
+        // only ever moves one step, which is what the assertions below pin down.
+        assertEquals(listOf(2L, 3L, 1L), q.state.value.items.map { it.file.remote.messageId })
         assertEquals(3, q.state.value.items.size)
+
+        q.setQueue(listOf(item(1), item(2), item(3)), 0)
+        q.move(0, 1)
+        assertEquals(listOf(2L, 1L, 3L), q.state.value.items.map { it.file.remote.messageId })
+        q.move(1, 0)
+        assertEquals(listOf(1L, 2L, 3L), q.state.value.items.map { it.file.remote.messageId })
     }
 
     @Test
