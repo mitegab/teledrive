@@ -166,7 +166,7 @@ fun AmplifyBackground(modifier: Modifier = Modifier, content: @Composable BoxSco
             )
         )
     ) {
-        Box(
+        Spacer(
             Modifier
                 .fillMaxWidth(0.9f)
                 .fillMaxHeight(0.42f)
@@ -454,7 +454,7 @@ fun AmplifyEqualizer(
 /** Hairline divider tuned for the dark glass surfaces. */
 @Composable
 fun AmplifyDivider(modifier: Modifier = Modifier) {
-    Box(
+    Spacer(
         modifier
             .fillMaxWidth()
             .height(1.dp)
