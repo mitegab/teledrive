@@ -14,6 +14,10 @@ import com.teledrive.core.model.SortDirection
 import com.teledrive.core.model.SortField
 import com.teledrive.core.model.StoredFile
 import com.teledrive.core.model.TeleDriveLog
+import com.teledrive.playback.video.MediaTrackKind
+import com.teledrive.playback.video.MediaTrackSnapshot
+import com.teledrive.playback.video.VideoDecoderStats
+import com.teledrive.playback.video.VideoDimensions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Collections
 import javax.inject.Inject
@@ -41,6 +45,7 @@ class MediaPlayerViewModel @Inject constructor(
     val controller: PlaybackController,
     private val repository: FileIndexRepository,
     private val metadataExtractor: MediaMetadataExtractor,
+    private val audioEffects: PlaybackAudioEffects,
 ) : ViewModel() {
 
     val playerState: StateFlow<PlayerUiState> = controller.uiState
@@ -130,11 +135,55 @@ class MediaPlayerViewModel @Inject constructor(
     fun setVolume(volume: Float) = controller.setVolume(volume)
     fun toggleShuffle() = controller.toggleShuffle()
     fun toggleRepeat() = controller.toggleRepeat()
+    fun setRepeatMode(mode: RepeatMode) = controller.setRepeat(mode)
     fun addToQueue(stableId: String, playNext: Boolean = false) = controller.addToQueue(stableId, playNext)
     fun addAllToQueue(ids: List<String>) = controller.addAllToQueue(ids)
     fun removeFromQueue(index: Int) = controller.removeFromQueue(index)
     fun moveInQueue(from: Int, to: Int) = controller.moveInQueue(from, to)
     fun clearQueue() = controller.clearQueue()
+
+    // ---- video workspace ----------------------------------------------------------
+
+    val trackSnapshot: StateFlow<MediaTrackSnapshot> = controller.trackSnapshot
+    val videoSize: StateFlow<VideoDimensions> = controller.videoSize
+    val audioSessionId: StateFlow<Int> = controller.audioSessionId
+
+    fun selectTrack(kind: MediaTrackKind, groupIndex: Int, trackIndex: Int) =
+        controller.selectTrack(kind, groupIndex, trackIndex)
+
+    fun selectTrackAutomatic(kind: MediaTrackKind) = controller.selectTrackAutomatic(kind)
+
+    fun setTrackTypeEnabled(kind: MediaTrackKind, enabled: Boolean) =
+        controller.setTrackTypeEnabled(kind, enabled)
+
+    fun setCaptionsEnabled(enabled: Boolean) =
+        controller.setTrackTypeEnabled(MediaTrackKind.TEXT, enabled)
+
+    /** Pauses and moves one frame; [forward] steps toward the end. */
+    fun frameStep(forward: Boolean) = controller.frameStep(forward)
+
+    fun setPreciseSeeking(enabled: Boolean) = controller.setPreciseSeeking(enabled)
+
+    suspend fun savedPosition(stableId: String): Long = controller.savedPositionMs(stableId)
+
+    fun decoderStats(): VideoDecoderStats = controller.decoderStats()
+
+    // ---- audio effects -------------------------------------------------------------
+
+    val audioEffectsState: StateFlow<AudioEffectsState> = audioEffects.state
+
+    /** Binds the equalizer/loudness effects to the player's current audio session. */
+    fun attachAudioEffects(audioSessionId: Int) = audioEffects.attach(audioSessionId)
+
+    fun setEqualizerEnabled(enabled: Boolean) = audioEffects.setEnabled(enabled)
+
+    fun selectEqualizerPreset(index: Int) = audioEffects.usePreset(index)
+
+    fun setEqualizerBand(index: Int, levelMb: Int) = audioEffects.setBandLevel(index, levelMb)
+
+    fun setLoudnessGain(gainMb: Int) = audioEffects.setGainMb(gainMb)
+
+    fun resetAudioEffects() = audioEffects.reset()
 
     /** Embedded cover for a local audio file, cached per path; null when there is none. */
     suspend fun artwork(localPath: String): ImageBitmap? {

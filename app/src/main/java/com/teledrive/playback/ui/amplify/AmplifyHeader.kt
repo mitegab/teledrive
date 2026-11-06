@@ -175,7 +175,7 @@ private fun AmplifyCoverCard(
             shape = RoundedCornerShape(0.dp),
             iconSize = 30.dp,
         )
-        Box(
+        Spacer(
             Modifier
                 .fillMaxSize()
                 .background(

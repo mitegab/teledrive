@@ -114,7 +114,7 @@ fun MiniPlayer(
                     .height(2.dp)
                     .background(Color.White.copy(alpha = 0.08f))
             ) {
-                Box(
+                Spacer(
                     Modifier
                         .fillMaxWidth(fraction)
                         .fillMaxHeight()
