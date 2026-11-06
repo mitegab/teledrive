@@ -166,7 +166,7 @@ class PlaybackController @Inject constructor(
         newPlayer.addListener(playerListener)
         newPlayer.volume = _uiState.value.volume
         // Video scrubbing and frame stepping need frame-accurate seeks, not keyframe snaps.
-        newPlayer.seekParameters = SeekParameters.EXACT
+        newPlayer.setSeekParameters(SeekParameters.EXACT)
         newPlayer.repeatMode = when (queue.state.value.repeatMode) {
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
@@ -594,7 +594,7 @@ class PlaybackController @Inject constructor(
 
     /** Tightens seeks to the exact frame while a video surface is on screen. */
     fun setPreciseSeeking(enabled: Boolean) {
-        player?.seekParameters = if (enabled) SeekParameters.EXACT else SeekParameters.DEFAULT
+        player?.setSeekParameters(if (enabled) SeekParameters.EXACT else SeekParameters.DEFAULT)
     }
 
     /** Last stored position for the resume prompt; never throws. */
